@@ -19,21 +19,30 @@ function join(s, r, d) {
   r.players.set(s.id, { id: s.id, name: String(d.name || 'Oyuncu').slice(0, 12), bird: d.bird | 0, score: 0, alive: true, last: Date.now() });
   s.join(r.code); s.data.room = r.code; push(r);
 }
+// Aktif (sekmesi açık/görünür) oyuncu sayısı
+let lastOn = -1;
+const online = () => { let n = 0; io.sockets.sockets.forEach(x => { if (x.data.vis !== false) n++; }); return n; };
+const pushOnline = () => { const n = online(); if (n !== lastOn) { lastOn = n; io.emit('online', n); } };
+setInterval(() => { lastOn = -1; pushOnline(); }, 10000);
 io.on('connection', s => {
+  s.emit('online', online()); pushOnline();
+  s.on('vis', v => { s.data.vis = !!v; pushOnline(); });
   s.on('t', (c, cb) => { if (typeof cb === 'function') cb(Date.now()); });   // saat eşitleme
   s.on('create', d => { if (s.data.room) leave(s); const r = { code: code(), host: s.id, started: false, players: new Map() }; rooms.set(r.code, r); join(s, r, d || {}); });
   s.on('join', d => { if (s.data.room) leave(s); const r = rooms.get(String(d && d.code || '').toUpperCase()); r ? join(s, r, d) : s.emit('err', 'Oda bulunamadı'); });
   s.on('start', () => {
     const r = rooms.get(s.data.room); if (!r || r.host !== s.id || r.started) return;
-    r.started = true; const slots = {}; let i = 0;
+    r.started = true; r.claimed = new Set(); const slots = {}; let i = 0;
     r.players.forEach(p => { p.alive = true; p.score = 0; p.last = Date.now() + 4000; slots[p.id] = i++; });
     // Herkes aynı sunucu saatinde başlar: 3 sn geri sayım + 0.5 sn tampon
     io.to(r.code).emit('start', { seed: Math.random() * 4294967296 >>> 0, startAt: Date.now() + 3500, slots, n: i }); push(r);
   });
   s.on('s', a => { const r = rooms.get(s.data.room), p = r && r.players.get(s.id); if (!p || !Array.isArray(a)) return; p.last = Date.now(); p.score = a[2] | 0; s.to(r.code).volatile.emit('s', [s.id, a[0], a[1], a[2], a[3]]); });
   s.on('dead', sc => { const r = rooms.get(s.data.room), p = r && r.players.get(s.id); if (!p) return; p.alive = false; p.score = sc | 0; push(r); check(r); });
+  // Eklenti: ilk alan kazanır, sonuç odadaki herkese gider (haritadan herkes için kalkar)
+  s.on('pu', d => { const r = rooms.get(s.data.room), p = r && r.players.get(s.id); if (!r || !p || !p.alive || !r.started || !d || typeof d.id !== 'number' || r.claimed.has(d.id)) return; r.claimed.add(d.id); io.to(r.code).emit('pu', { id: d.id, by: s.id, type: String(d.type).slice(0, 20) }); });
   s.on('leave', () => leave(s));
-  s.on('disconnect', () => leave(s));
+  s.on('disconnect', () => { leave(s); setTimeout(pushOnline, 50); });
 });
 // 15 sn hiç veri göndermeyen (bağlantısı kopmuş/donmuş) canlı oyuncuyu elenmiş say
 setInterval(() => rooms.forEach(r => { if (!r.started) return; let ch = false; r.players.forEach(p => { if (p.alive && Date.now() - p.last > 15000) { p.alive = false; ch = true; } }); if (ch) { push(r); check(r); } }), 3000);
