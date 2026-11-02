@@ -1,6 +1,9 @@
 // Azizin Minik Kuşu - çok oyunculu oda sunucusu
 // Kurulum: npm i socket.io  |  Çalıştır: node server.js  (PORT ortam değişkeni ile port seçilir)
 const http = require('http');
+// Tek bir bozuk paket / beklenmeyen hata tüm sunucuyu (ve açık tüm odaları) düşürmesin
+process.on('uncaughtException', e => console.error('[uncaught]', e && e.stack || e));
+process.on('unhandledRejection', e => console.error('[unhandled]', e));
 const { Server } = require('socket.io');
 // Düz HTTP isteklerine "ok" döner (Render sağlık kontrolü / uyandırma pingi için); socket.io kendi yolunu yönetir
 const httpServer = http.createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); });
@@ -14,23 +17,26 @@ httpServer.listen(process.env.PORT || 3000);
 // Aynı IP'den çok fazla bağlantıyı reddet (siteyi yoğunlaştırıp çökertmeyi zorlaştırır)
 io.use((s, next) => { const ip = ipOf(s); if ((connsByIp.get(ip) || 0) >= MAX_CONN_PER_IP) return next(new Error('Çok fazla bağlantı')); s.data.ip = ip; next(); });
 
-// Ortak olay takvimi (sis / rüzgar / ters yerçekimi): herkes için aynı; t = tur başından ms, d = süre ms
+// Ortak olay takvimi: herkes için aynı; t = tur başından ms, d = süre ms (ilk ~2-3 sn uyarı süresidir)
+// wind: yukarı/aşağı rüzgar · rwind: yönü sürekli değişen TERS RÜZGAR · storm: FIRTINA (savurma + şimşek)
+// moon: AY YERÇEKİMİ (hafif) · heavy: AĞIR YERÇEKİMİ · grav: TERS YERÇEKİMİ
 function makeEvents() {
-  const ev = [], types = ['fog', 'wind', 'grav'];
-  let t = 22000 + Math.random() * 8000, last = '';
+  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav'];
+  const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000 };
+  let t = 20000 + Math.random() * 8000, last = '';
   while (t < 20 * 60 * 1000) {
-    let type; do { type = types[Math.random() * 3 | 0]; } while (type === last);
+    let type; do { type = types[Math.random() * types.length | 0]; } while (type === last);
     last = type;
-    const d = type === 'fog' ? 14000 + Math.random() * 4000 : type === 'wind' ? 9000 + Math.random() * 3000 : 14000;
-    ev.push({ type, t: Math.round(t), d: Math.round(d), dir: Math.random() < 0.5 ? -1 : 1 });
-    t += d + 4000 + 16000 + Math.random() * 12000;   // olaylar çakışmaz
+    const d = Math.round(dur[type]());
+    ev.push({ type, t: Math.round(t), d, dir: Math.random() < 0.5 ? -1 : 1 });
+    t += d + 4000 + 12000 + Math.random() * 10000;   // olaylar çakışmaz
   }
   return ev;
 }
 
 const MAX = 10, MAX_ROOMS = 500, TICK = 33, rooms = new Map();
 // --- Kötüye kullanım / aşırı yük koruması ---
-const MAX_CONN_PER_IP = 12;        // aynı IP'den en fazla eşzamanlı bağlantı
+const MAX_CONN_PER_IP = 40;        // aynı IP'den en fazla eşzamanlı bağlantı (okul / yurt gibi ortak IP'ler için 12 çok azdı)
 const MAX_ROOMS_PER_IP = 3;        // aynı IP'nin aynı anda açık tutabileceği oda (okul / ev ağı payı bırakıldı)
 const CREATE_COOLDOWN = 5000;      // iki oda kurma arası en az süre (ms)
 const connsByIp = new Map(), lastCreate = new Map();
@@ -80,11 +86,11 @@ setInterval(() => { lastOn = -1; pushOnline(); }, 15000);
 io.on('connection', s => {
   s.data.t0 = Date.now(); s.data.hb = Date.now();
   connsByIp.set(s.data.ip, (connsByIp.get(s.data.ip) || 0) + 1);
-  s.emit('ver', 3);   // istemci sunucunun güncel olup olmadığını anlasın
+  s.emit('ver', 4);   // istemci sunucunun güncel olup olmadığını anlasın
   s.on('hb', () => { s.data.hb = Date.now(); });
-  s.emit('online', online()); pushOnline();
-  s.on('vis', v => { s.data.vis = !!v; pushOnline(); });
-  s.on('t', (c, cb) => { if (typeof cb === 'function') cb(Date.now()); });   // saat eşitleme
+  s.emit('online', online());   // yayın yalnızca 3 sn'lik zamanlayıcıda (her bağlantıda herkese yayın = O(n²) yük)
+  s.on('vis', v => { s.data.vis = !!v; });
+  s.on('t', (c, cb) => { if (typeof cb === 'function') cb(Date.now()); });   // saat eşitleme (istemci art arda ölçüm yapar; sınırlamıyoruz)   // saat eşitleme
   s.on('create', d => {
     d = (d && typeof d === 'object') ? d : {};
     const ip = s.data.ip, cid = String(d.cid || '').slice(0, 40), now = Date.now();
@@ -157,6 +163,7 @@ io.on('connection', s => {
   });
   s.on('start', () => {
     const r = rooms.get(s.data.room); if (!r || r.host !== s.id || r.started) return;
+    if (r.players.size < 2) return s.emit('err', 'Oyunu başlatmak için en az 2 oyuncu gerekir');
     if (![...r.players.values()].every(p => p.ready)) return s.emit('err', 'Oda sahibi dahil herkes hazır olmadan başlatamazsın');
     r.started = true; r.claimed = new Set(); r.slots = {}; let i = 0;
     r.players.forEach(p => { p.alive = true; p.score = 0; p.dirty = false; p.last = Date.now() + 4000; r.slots[p.id] = i++; });
@@ -178,7 +185,7 @@ io.on('connection', s => {
   // Eklenti: ilk alan kazanır, sonuç odadaki herkese gider (haritadan herkes için kalkar)
   s.on('pu', d => {
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
-    if (!r || !p || !p.alive || !r.started || !d || typeof d.id !== 'number' || r.claimed.has(d.id)) return;
+    if (!r || !p || !p.alive || !r.started || !d || !Number.isInteger(d.id) || d.id < 0 || d.id > 100000 || r.claimed.has(d.id) || r.claimed.size > 3000 || !gate(s, 'pu', 40)) return;
     r.claimed.add(d.id); io.to(r.code).emit('pu', { id: d.id, by: s.id, type: String(d.type).slice(0, 20) });
   });
   // Oda sahibi oyuncuyu atar: aynı istemci kimliği bu odaya bir daha giremez
@@ -190,7 +197,7 @@ io.on('connection', s => {
   });
   s.on('leave', () => leave(s));
   s.on('disconnect', () => {
-    leave(s); setTimeout(pushOnline, 50);
+    leave(s);
     const n = (connsByIp.get(s.data.ip) || 1) - 1; if (n > 0) connsByIp.set(s.data.ip, n); else connsByIp.delete(s.data.ip);
   });
 });
