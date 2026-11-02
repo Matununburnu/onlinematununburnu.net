@@ -36,7 +36,7 @@ function makeEvents(freq) {
   return ev;
 }
 
-const MAX = 12, MAX_ROOMS = 500, TICK = 33, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
+const MAX = 12, MAX_ROOMS = 500, TICK = 25, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
 const STEP_MS = 1000 / 60, BOSS_SCORE = 50, BOSS_LEAD = 1500, SPEED_MUL = { slow: 0.7, normal: 1, fast: 1.7 };
 const SILENT_MS = 4000;   // bu kadar süre konum paketi gelmeyen (interneti giden / donan) oyuncu elenmiş sayılır
 // Sunucu tarafı skor doğrulaması: boru sıklığı oda ayarından ve oyuncu sayısından istemcideki formülle aynı hesaplanır;
@@ -212,17 +212,20 @@ io.on('connection', s => {
     r.started = true; r.claimed = new Set(); r.slots = {}; let i = 0;
     r.startAt = Date.now() + 3500;   // herkes aynı sunucu saatinde başlar: 3 sn geri sayım + 0.5 sn tampon
     r.bossDone = false;              // boss turda bir kez, ilk 50 skora ulaşan oyuncu tetikler
-    r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.last = Date.now() + 4000; r.slots[p.id] = i++; });
+    r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.q = []; p.last = Date.now() + 4000; r.slots[p.id] = i++; });
     r.n0 = i;
     io.to(r.code).emit('start', { seed: Math.random() * 4294967296 >>> 0, startAt: r.startAt, slots: r.slots, n: i, opts: r.opts, events: r.opts.ev === false ? [] : makeEvents(r.opts.evf) }); push(r);
   });
-  // Konum paketi: yalnızca saklanır; odaya 30 Hz'lik TOPLU pakette ('S') gönderilir (oyuncu başına ayrı paket yok → ağ yükü ~10 kat azalır)
+  // Konum paketi: yalnızca saklanır; odaya 40 Hz'lik TOPLU pakette ('S') gönderilir (oyuncu başına ayrı paket yok → ağ yükü ~10 kat azalır)
   s.on('s', a => {
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
     if (!p || !p.alive || !r.started || !Array.isArray(a)) return;
     const now = Date.now();
-    p.y = num(a[0], -5000, 20000) | 0; p.vy = num(a[1], -2000, 2000) | 0; p.st = num(a[3], 0, 1e9) | 0; p.dirty = true; p.last = now;
+    p.y = Math.round(num(a[0], -5000, 20000) * 10) / 10; p.vy = num(a[1], -2000, 2000) | 0; p.st = num(a[3], 0, 1e9) | 0; p.dirty = true; p.last = now;
+    // Örnek kuyruğa da eklenir: yayın zamanlayıcısı ile istemci gönderim zamanlayıcısı birbirine denk gelmediğinde örnekler kaybolmaz / ezilmez (takılmanın ana nedeniydi)
+    const q = p.q || (p.q = []); if (!q.length || p.st > q[q.length - 1][3]) { q.push([p.y, p.vy, 0, p.st]); if (q.length > 6) q.shift(); }
     if (!okScore(r, p, num(a[2], 0, 1e7) | 0, now, s)) return;
+    if (p.q && p.q.length) p.q[p.q.length - 1][2] = p.score;
     // Herkesle aynı anda boss: odada ilk 50 skora ulaşan oyuncu boss'u herkes için tetikler (başlangıç zamanı oyun saatine göre)
     if (!r.bossDone && p.score >= BOSS_SCORE) { r.bossDone = true; io.to(r.code).emit('boss', { t: Math.max(0, now - r.startAt) + BOSS_LEAD }); }
   });
@@ -259,11 +262,11 @@ io.on('connection', s => {
   });
 });
 
-// 30 Hz toplu konum yayını: [slot, y, vy, skor, oyun adımı, ...] (adım numarası sayesinde herkes konumu aynı oyun zamanında çizer)
+// 40 Hz toplu konum yayını (kuyruktaki tüm örneklerle): [slot, y, vy, skor, oyun adımı, ...] (adım numarası sayesinde herkes konumu aynı oyun zamanında çizer)
 setInterval(() => rooms.forEach(r => {
   if (!r.started) return;
   const out = [];
-  r.players.forEach(p => { if (p.alive && p.dirty) { p.dirty = false; const sl = r.slots[p.id]; if (sl !== undefined) out.push(sl, p.y, p.vy, p.score, p.st); } });
+  r.players.forEach(p => { if (p.alive && p.dirty) { p.dirty = false; const sl = r.slots[p.id], q = p.q; if (sl !== undefined && q && q.length) { for (let i = 0; i < q.length; i++) out.push(sl, q[i][0], q[i][1], q[i][2], q[i][3]); } if (q) q.length = 0; } });
   if (out.length) io.to(r.code).volatile.emit('P', out);
 }), TICK);
 
