@@ -20,11 +20,12 @@ io.use((s, next) => { const ip = ipOf(s); if ((connsByIp.get(ip) || 0) >= MAX_CO
 // Ortak olay takvimi: herkes için aynı; t = tur başından ms, d = süre ms (ilk ~2-3 sn uyarı süresidir)
 // wind: yukarı/aşağı rüzgar · rwind: yönü sürekli değişen TERS RÜZGAR · storm: FIRTINA (savurma + şimşek)
 // moon: AY YERÇEKİMİ (hafif) · heavy: AĞIR YERÇEKİMİ · grav: TERS YERÇEKİMİ
+// fog: SİS (görüş azalır) · quake: DEPREM (sarsıntı) · blackout: ELEKTRİK KESİNTİSİ (ekran kararır) · glide: SÜZÜLME (düşüş hızı sınırlanır)
 const EV_PAUSE = { low: 2.2, normal: 1, high: 0.4 };   // olaylar arası bekleme çarpanı (az / normal / sık)
 function makeEvents(freq) {
   const mul = EV_PAUSE[freq] || 1;
-  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav'];
-  const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000 };
+  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'fog', 'quake', 'blackout', 'glide'];   // fog: SİS · quake: DEPREM · blackout: ELEKTRİK KESİNTİSİ · glide: SÜZÜLME
+  const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, fog: () => 11000 + Math.random() * 3000, quake: () => 8000 + Math.random() * 2000, blackout: () => 10000 + Math.random() * 2000, glide: () => 10000 + Math.random() * 3000 };
   let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '';
   while (t < 20 * 60 * 1000) {
     let type; do { type = types[Math.random() * types.length | 0]; } while (type === last);
@@ -37,6 +38,8 @@ function makeEvents(freq) {
 }
 
 const MAX = 12, MAX_ROOMS = 500, TICK = 25, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
+const BOSS_MS = 20000, BOSS_REST = 4000;   // boss süresi (istemcideki BOSS_DURATION ile aynı) ve iki boss arası en az bekleme
+const BOSS_STEP = { low: 100, normal: 60, high: 30 };   // sonraki boss için gereken skor farkı (sıklık ayarı: az / normal / sık)
 const STEP_MS = 1000 / 60, BOSS_SCORE = 50, BOSS_LEAD = 1500, SPEED_MUL = { slow: 0.7, normal: 1, fast: 1.7 };
 const SILENT_MS = 4000;   // bu kadar süre konum paketi gelmeyen (interneti giden / donan) oyuncu elenmiş sayılır
 // Sunucu tarafı skor doğrulaması: boru sıklığı oda ayarından ve oyuncu sayısından istemcideki formülle aynı hesaplanır;
@@ -61,6 +64,29 @@ const disown = (r, id) => { if (r.ownerId === id) { r.ownerId = null; r.ownerCid
 // --- Oda sohbeti: son 40 mesaj odada tutulur (yeni giren görsün); sistem mesajları (katıldı / ayrıldı) aynı kanaldan gider
 const cleanMsg = (v, n) => String(v || '').replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
 function addChat(r, m) { m.t = Date.now(); (r.chat || (r.chat = [])).push(m); if (r.chat.length > 40) r.chat.shift(); io.to(r.code).emit('chat', m); }
+
+// Oda listesi (önbellekli): özel odaların kodu ASLA gönderilmez; herkese açık odaların kodu gönderilir
+const listCache = { t: 0, data: null };
+function roomList() {
+  const now = Date.now();
+  if (listCache.data && now - listCache.t < 250) return listCache.data;
+  const out = [];
+  rooms.forEach(r => { const h = r.players.get(r.host); out.push({ code: r.public ? r.code : undefined, pub: !!r.public, n: r.players.size, host: h ? h.name : 'Oyuncu', started: r.started, name: r.name || '', rid: r.uid }); });
+  const rank = x => (!x.started && x.n < MAX ? 0 : 1) * 2 + (x.pub ? 0 : 1);
+  out.sort((a, b) => rank(a) - rank(b) || b.n - a.n);
+  listCache.t = now; listCache.data = out.slice(0, 40);
+  return listCache.data;
+}
+// Oyuncunun profil özeti (istemci bildirir; yalnızca GÖSTERİM içindir, sayılar sınırlandırılır)
+const cnum = (v, hi) => (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.min(hi, Math.round(v))) : 0;
+function cleanProf(d) {
+  d = (d && typeof d === 'object') ? d : {};
+  return {
+    lv: Math.max(1, cnum(d.lv, 999)), xp: cnum(d.xp, 1e9), rk: clean(d.rk, 24), rc: /^#[0-9a-fA-F]{3,8}$/.test(String(d.rc || '')) ? String(d.rc) : '',
+    hs: cnum(d.hs, 1e7), g: cnum(d.g, 1e7), avg: cnum(d.avg, 1e7), pp: cnum(d.pp, 1e9), bs: cnum(d.bs, 1e6), ch: cnum(d.ch, 999), chT: cnum(d.chT, 999),
+    pm: cnum(d.pm, 1e11), st: cnum(d.st, 99999), bst: cnum(d.bst, 99999), dth: cnum(d.dth, 1e8), fav: cnum(d.fav, 999)
+  };
+}
 const code = () => { let c; do { c = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPRSTUVYZ'[Math.random() * 21 | 0]).join(''); } while (rooms.has(c)); return c; };
 const num = (v, lo, hi) => (typeof v === 'number' && isFinite(v)) ? Math.max(lo, Math.min(hi, v)) : 0;
 const pub = r => ({ code: r.code, started: r.started, public: !!r.public, name: r.name || '', opts: r.opts, players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, bird: p.bird, host: p.id === r.host, score: p.score, alive: p.alive, ready: !!p.ready })) });
@@ -128,7 +154,7 @@ setInterval(() => { lastOn = -1; pushOnline(); }, 15000);
 io.on('connection', s => {
   s.data.t0 = Date.now(); s.data.hb = Date.now();
   connsByIp.set(s.data.ip, (connsByIp.get(s.data.ip) || 0) + 1);
-  s.emit('ver', 5);   // istemci sunucunun güncel olup olmadığını anlasın
+  s.emit('ver', 7);   // istemci sunucunun güncel olup olmadığını anlasın
   s.emit('cfg', { max: MAX });   // oda kapasitesi (istemci göstergeleri buna göre)
   s.on('hb', () => { s.data.hb = Date.now(); });
   s.emit('online', online());   // yayın yalnızca 3 sn'lik zamanlayıcıda (her bağlantıda herkese yayın = O(n²) yük)
@@ -156,13 +182,13 @@ io.on('connection', s => {
     if (own >= MAX_ROOMS_PER_IP) return s.emit('err', 'Bu ağdan en fazla ' + MAX_ROOMS_PER_IP + ' oda açılabilir. Önce açık odalarını kapat');
     if (rooms.size >= MAX_ROOMS) return s.emit('err', 'Sunucu şu an dolu, biraz sonra dene');
     const rname = clean(d.rname, 15);
-    const r = { code: code(), uid: Math.random().toString(36).slice(2, 10), opts: { gap: 'normal', speed: 'normal', ev: true, evf: 'normal' }, host: s.id, started: false, public: d.public === true || d.public === 1, name: rname, players: new Map(), slots: {}, claimed: new Set(), banned: new Set(), members: new Set(), ownerId: s.id, ownerCid: cid, ownerIp: ip };
+    const r = { code: code(), uid: Math.random().toString(36).slice(2, 10), opts: { gap: 'normal', speed: 'normal', ev: true, evf: 'normal', boss: true, bossf: 'normal' }, host: s.id, started: false, public: d.public === true || d.public === 1, name: rname, players: new Map(), slots: {}, claimed: new Set(), banned: new Set(), members: new Set(), ownerId: s.id, ownerCid: cid, ownerIp: ip };
     lastCreate.set(ip, now);
     rooms.set(r.code, r); join(s, r, d);
   });
   s.on('join', d => {
     d = (d && typeof d === 'object') ? d : {};
-    if (!gate(s, 'join', 400)) return;
+    if (!gate(s, 'join', 250)) return;
     if (s.data.room) leave(s);
     const r = rooms.get(String(d.code || '').trim().toUpperCase());
     if (!r) return s.emit('err', 'Oda bulunamadı');
@@ -170,14 +196,11 @@ io.on('connection', s => {
     join(s, r, d);
   });
   // Herkese açık odalar: henüz başlamamış ve dolu olmayan odalar listelenir
+  // Liste 250 ms önbelleğe alınır (çok kişi aynı anda yenilerken sunucu yükü artmasın); sınıra takılan istek de son listeyle yanıtlanır
   s.on('list', cb => {
-    if (typeof cb !== 'function' || !gate(s, 'list', 700)) return;
-    const out = [];
-    // Özel odalar da listelenir (kilitli), ama kodları ASLA gönderilmez; herkese açık odaların kodu gönderilir
-    rooms.forEach(r => { const h = r.players.get(r.host); out.push({ code: r.public ? r.code : undefined, pub: !!r.public, n: r.players.size, host: h ? h.name : 'Oyuncu', started: r.started, name: r.name || '', rid: r.uid }); });
-    const rank = x => (!x.started && x.n < MAX ? 0 : 1) * 2 + (x.pub ? 0 : 1);
-    out.sort((a, b) => rank(a) - rank(b) || b.n - a.n);
-    cb(out.slice(0, 40));
+    if (typeof cb !== 'function') return;
+    if (!gate(s, 'list', 250)) return cb(listCache.data || []);
+    cb(roomList());
   });
   // "Son odaya dön" butonu için: oda hâlâ açık ve girilebilir mi?
   s.on('exists', (d, cb) => {
@@ -196,6 +219,8 @@ io.on('connection', s => {
     else if (k === 'speed' && ['slow', 'normal', 'fast'].includes(v)) r.opts.speed = v;
     else if (k === 'ev') r.opts.ev = (v === 'on' || v === true);
     else if (k === 'evf' && ['low', 'normal', 'high'].includes(v)) r.opts.evf = v;
+    else if (k === 'boss') r.opts.boss = (v === 'on' || v === true);   // boss olayı aç / kapat
+    else if (k === 'bossf' && ['low', 'normal', 'high'].includes(v)) r.opts.bossf = v;   // boss sıklığı
     else return;
     push(r);
   });
@@ -211,7 +236,8 @@ io.on('connection', s => {
     if (![...r.players.values()].every(p => p.ready)) return s.emit('err', 'Oda sahibi dahil herkes hazır olmadan başlatamazsın');
     r.started = true; r.claimed = new Set(); r.slots = {}; let i = 0;
     r.startAt = Date.now() + 3500;   // herkes aynı sunucu saatinde başlar: 3 sn geri sayım + 0.5 sn tampon
-    r.bossDone = false;              // boss turda bir kez, ilk 50 skora ulaşan oyuncu tetikler
+    r.bossNext = BOSS_SCORE;         // sonraki boss için gereken skor: ilk boss ASLA 50'den önce çıkmaz (sıklık ayarı yalnızca sonraki bosslara uygulanır)
+    r.bossEnd = 0;                   // çalışan bossun bitiş zamanı (oyun saati, ms): bosslar üst üste binmez
     r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.q = []; p.last = Date.now() + 4000; r.slots[p.id] = i++; });
     r.n0 = i;
     io.to(r.code).emit('start', { seed: Math.random() * 4294967296 >>> 0, startAt: r.startAt, slots: r.slots, n: i, opts: r.opts, events: r.opts.ev === false ? [] : makeEvents(r.opts.evf) }); push(r);
@@ -227,7 +253,14 @@ io.on('connection', s => {
     if (!okScore(r, p, num(a[2], 0, 1e7) | 0, now, s)) return;
     if (p.q && p.q.length) p.q[p.q.length - 1][2] = p.score;
     // Herkesle aynı anda boss: odada ilk 50 skora ulaşan oyuncu boss'u herkes için tetikler (başlangıç zamanı oyun saatine göre)
-    if (!r.bossDone && p.score >= BOSS_SCORE) { r.bossDone = true; io.to(r.code).emit('boss', { t: Math.max(0, now - r.startAt) + BOSS_LEAD }); }
+    // Boss açıksa: odada ilk 50 skora ulaşan oyuncu ilk boss'u herkes için tetikler (50'den sonra boss DAİMA çıkar). Sonraki bosslar sıklık ayarına göre skor aralığıyla gelir
+    if (r.opts.boss !== false && p.score >= Math.max(BOSS_SCORE, r.bossNext)) {
+      const bt = Math.max(0, now - r.startAt) + BOSS_LEAD;
+      if (bt >= r.bossEnd + BOSS_REST) {   // önceki boss bitmeden yenisi başlamaz
+        r.bossEnd = bt + BOSS_MS; r.bossNext = p.score + (BOSS_STEP[r.opts.bossf] || BOSS_STEP.normal);
+        io.to(r.code).emit('boss', { t: bt });
+      }
+    }
   });
   s.on('dead', sc => {
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
@@ -249,11 +282,36 @@ io.on('connection', s => {
     if (p.cid) r.banned.add(p.cid);
     if (t) { t.emit('kicked'); leave(t, 'kick'); } else { r.players.delete(id); push(r); }
   });
+  // Oyuncu kendi profil özetini bildirir (odadaki diğerleri üstüne tıklayınca görebilsin)
+  s.on('prof', d => {
+    const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
+    if (!p || !gate(s, 'prof', 1000)) return;
+    p.prof = cleanProf(d);
+  });
+  // Odadaki bir oyuncunun profilini iste (yalnızca aynı odadakiler birbirinin profilini görebilir)
+  s.on('getprof', (id, cb) => {
+    if (typeof cb !== 'function') return;
+    if (!gate(s, 'getprof', 150)) return cb(null);
+    const r = rooms.get(s.data.room), p = r && typeof id === 'string' && r.players.get(id);
+    if (!p || p.gone) return cb(null);
+    cb({ id: p.id, name: p.name, bird: p.bird, host: p.id === r.host, ready: !!p.ready, prof: p.prof || null });
+  });
+  // Lobi liderliğini (oda sahipliği) başka bir oyuncuya ver: yalnızca mevcut lider, oyun başlamadan
+  s.on('transfer', id => {
+    const r = rooms.get(s.data.room); if (!r || r.host !== s.id || r.started || typeof id !== 'string' || id === s.id || !gate(s, 'transfer', 600)) return;
+    const p = r.players.get(id), old = r.players.get(s.id); if (!p || p.gone) return;
+    r.host = id;
+    // Kota sahipliği de yeni lidere geçer (eski liderin başka oda kurması engellenmesin)
+    r.ownerId = id; r.ownerCid = p.cid || ''; const t = io.sockets.sockets.get(id); r.ownerIp = t ? t.data.ip : '';
+    addChat(r, { s: 1, k: 'j', x: (old ? old.name : 'Lider') + ' lobi liderliğini ' + p.name + ' oyuncusuna verdi' });
+    if (t) t.emit('newhost');
+    push(r);
+  });
   s.on('chat', txt => {
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
     if (!p || p.gone || typeof txt !== 'string' || !gate(s, 'chat', 700)) return;
     const x = cleanMsg(txt, 140); if (!x) return;
-    addChat(r, { id: s.id, n: p.name, x });
+    addChat(r, { id: s.id, n: p.name, x, d: (r.started && !p.alive) ? 1 : 0 });   // d: ölmüş / izleyici
   });
   s.on('leave', () => leave(s));
   s.on('disconnect', () => {
