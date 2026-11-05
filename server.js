@@ -20,12 +20,12 @@ io.use((s, next) => { const ip = ipOf(s); if ((connsByIp.get(ip) || 0) >= MAX_CO
 // Ortak olay takvimi: herkes için aynı; t = tur başından ms, d = süre ms (ilk ~2-3 sn uyarı süresidir)
 // wind: yukarı/aşağı rüzgar · rwind: yönü sürekli değişen TERS RÜZGAR · storm: FIRTINA (savurma + şimşek)
 // moon: AY YERÇEKİMİ (hafif) · heavy: AĞIR YERÇEKİMİ · grav: TERS YERÇEKİMİ
-// fog: SİS (görüş azalır) · quake: DEPREM (sarsıntı) · blackout: ELEKTRİK KESİNTİSİ (ekran kararır) · glide: SÜZÜLME (düşüş hızı sınırlanır)
+// fog: SİS (görüş azalır) · blackout: ELEKTRİK KESİNTİSİ (ekran kararır) · glide: SÜZÜLME (düşüş hızı sınırlanır)
 const EV_PAUSE = { low: 2.2, normal: 1, high: 0.4 };   // olaylar arası bekleme çarpanı (az / normal / sık)
 function makeEvents(freq) {
   const mul = EV_PAUSE[freq] || 1;
-  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'fog', 'quake', 'blackout', 'glide'];   // fog: SİS · quake: DEPREM · blackout: ELEKTRİK KESİNTİSİ · glide: SÜZÜLME
-  const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, fog: () => 11000 + Math.random() * 3000, quake: () => 8000 + Math.random() * 2000, blackout: () => 10000 + Math.random() * 2000, glide: () => 10000 + Math.random() * 3000 };
+  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'fog', 'blackout', 'glide'];   // fog: SİS · blackout: ELEKTRİK KESİNTİSİ · glide: SÜZÜLME
+  const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, fog: () => 11000 + Math.random() * 3000, blackout: () => 10000 + Math.random() * 2000, glide: () => 10000 + Math.random() * 3000 };
   let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '';
   while (t < 20 * 60 * 1000) {
     let type; do { type = types[Math.random() * types.length | 0]; } while (type === last);
