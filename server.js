@@ -22,12 +22,13 @@ io.use((s, next) => { const ip = ipOf(s); if ((connsByIp.get(ip) || 0) >= MAX_CO
 // moon: AY YERÇEKİMİ (hafif) · heavy: AĞIR YERÇEKİMİ · grav: TERS YERÇEKİMİ
 // glide: SÜZÜLME (düşüş hızı sınırlanır)
 const EV_PAUSE = { low: 2.2, normal: 1, high: 0.4 };   // olaylar arası bekleme çarpanı (az / normal / sık)
+const EV_HORIZON = 3 * 60 * 60 * 1000;   // olay takvimi 3 saat boyunca üretilir (çok uzun turlarda da olaylar sürsün)
 function makeEvents(freq) {
   const mul = EV_PAUSE[freq] || 1;
   const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'glide'];   // glide: SÜZÜLME
   const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, glide: () => 10000 + Math.random() * 3000 };
   let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '';
-  while (t < 20 * 60 * 1000) {
+  while (t < EV_HORIZON) {
     let type; do { type = types[Math.random() * types.length | 0]; } while (type === last);
     last = type;
     const d = Math.round(dur[type]());
@@ -44,10 +45,25 @@ const STEP_MS = 1000 / 60, BOSS_SCORE = 50, BOSS_LEAD = 1500, SPEED_MUL = { slow
 const SILENT_MS = 4000;   // bu kadar süre konum paketi gelmeyen (interneti giden / donan) oyuncu elenmiş sayılır
 // Sunucu tarafı skor doğrulaması: boru sıklığı oda ayarından ve oyuncu sayısından istemcideki formülle aynı hesaplanır;
 // geçen süreye göre ulaşılabilecek en yüksek skor (2 sn tolerans + 3 boru payı) bulunur
-function maxScore(r, now) {
+// Yatay doğuş konumları: oyuncular aynı hizada başlamaz. Oyuncu sayısına göre birkaç "sütun" (geri → ileri) oluşturulur ve slotlara rastgele dağıtılır.
+// Daha ileride duran kuş borulara daha erken ulaşır; bu fark skor tavanına eklenir (öndeki oyuncu hileci sanılmasın)
+const LANE_BASE = 190, LANE_PIPE_SPEED = 13;   // istemcideki en geri kuş x'i ve boru hızı (px / adım, hız çarpanı 1)
+function makeLanes(n) {
+  const dw = Math.round(3300 + 160 * (n - 1)), C = Math.max(1, Math.min(n, 6));
+  const span = C > 1 ? Math.min(330 * (C - 1), dw * 0.4 - LANE_BASE) : 0, G = C > 1 ? span / (C - 1) : 0;
+  const xs = [];
+  for (let j = 0; j < n; j++) {
+    const col = j % C; let x = LANE_BASE + col * G;
+    if (col > 0) x += (Math.random() - 0.5) * G * 0.3;   // ızgara gibi durmasın
+    xs.push(Math.round(Math.max(LANE_BASE, x)));
+  }
+  for (let i = xs.length - 1; i > 0; i--) { const k = Math.random() * (i + 1) | 0; const t = xs[i]; xs[i] = xs[k]; xs[k] = t; }
+  return xs;
+}
+function maxScore(r, now, p) {
   const dw = Math.round(3300 + 160 * (Math.max(1, r.n0 || 1) - 1)), base = Math.round(85 * Math.sqrt(dw / 1920));
   const iv = Math.max(20, Math.round(base / (SPEED_MUL[r.opts.speed] || 1)));
-  const steps = Math.max(0, (now - r.startAt) / STEP_MS) + 120;
+  const steps = Math.max(0, (now - r.startAt) / STEP_MS) + 120 + ((p && p.lead) || 0);
   return Math.floor(steps / (iv + 1)) + 3;
 }
 // --- Kötüye kullanım / aşırı yük koruması ---
@@ -134,7 +150,7 @@ function check(r) {
 }
 // Skor doğrulama: skor asla düşmez, geçen süreyle ulaşılabilecek değeri aşamaz. Aşan değer kırpılır; art arda aşanlar elenir
 function okScore(r, p, sc, now, s) {
-  const mx = maxScore(r, now);
+  const mx = maxScore(r, now, p);
   if (sc > mx) {
     p.strikes++; sc = mx;
     if (s && p.strikes >= 30 && p.alive) {   // ~1 sn boyunca imkansız skor gönderdi: hileli istemci
@@ -252,18 +268,19 @@ io.on('connection', s => {
     r.startAt = Date.now() + 3500;   // herkes aynı sunucu saatinde başlar: 3 sn geri sayım + 0.5 sn tampon
     r.bossNext = BOSS_SCORE;         // sonraki boss için gereken skor: ilk boss ASLA 50'den önce çıkmaz (sıklık ayarı yalnızca sonraki bosslara uygulanır)
     r.bossEnd = 0;                   // çalışan bossun bitiş zamanı (oyun saati, ms): bosslar üst üste binmez
-    r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.q = []; p.last = Date.now() + 4000; r.slots[p.id] = i++; });
+    r.lanes = makeLanes(r.players.size);
+    r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.jc = 0; p.q = []; p.last = Date.now() + 4000; const sl = i++; r.slots[p.id] = sl; p.lead = Math.max(0, r.lanes[sl] - LANE_BASE) / (LANE_PIPE_SPEED * (SPEED_MUL[r.opts.speed] || 1)); });
     r.n0 = i;
-    io.to(r.code).emit('start', { seed: Math.random() * 4294967296 >>> 0, startAt: r.startAt, slots: r.slots, n: i, opts: r.opts, events: r.opts.ev === false ? [] : makeEvents(r.opts.evf) }); push(r);
+    io.to(r.code).emit('start', { seed: Math.random() * 4294967296 >>> 0, startAt: r.startAt, slots: r.slots, lx: r.lanes, n: i, opts: r.opts, events: r.opts.ev === false ? [] : makeEvents(r.opts.evf) }); push(r);
   });
   // Konum paketi: yalnızca saklanır; odaya 40 Hz'lik TOPLU pakette ('S') gönderilir (oyuncu başına ayrı paket yok → ağ yükü ~10 kat azalır)
   s.on('s', a => {
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
     if (!p || !p.alive || !r.started || !Array.isArray(a)) return;
     const now = Date.now();
-    p.y = Math.round(num(a[0], -5000, 20000) * 10) / 10; p.vy = num(a[1], -2000, 2000) | 0; p.st = num(a[3], 0, 1e9) | 0; p.dirty = true; p.last = now;
+    p.y = Math.round(num(a[0], -5000, 20000) * 10) / 10; p.vy = num(a[1], -2000, 2000) | 0; p.st = num(a[3], 0, 1e9) | 0; p.jc = num(a[4], 0, 1e7) | 0; p.dirty = true; p.last = now;
     // Örnek kuyruğa da eklenir: yayın zamanlayıcısı ile istemci gönderim zamanlayıcısı birbirine denk gelmediğinde örnekler kaybolmaz / ezilmez (takılmanın ana nedeniydi)
-    const q = p.q || (p.q = []); if (!q.length || p.st > q[q.length - 1][3]) { q.push([p.y, p.vy, 0, p.st]); if (q.length > 6) q.shift(); }
+    const q = p.q || (p.q = []); if (!q.length || p.st > q[q.length - 1][3]) { q.push([p.y, p.vy, 0, p.st, p.jc]); if (q.length > 6) q.shift(); }
     if (!okScore(r, p, num(a[2], 0, 1e7) | 0, now, s)) return;
     if (p.q && p.q.length) p.q[p.q.length - 1][2] = p.score;
     // Herkesle aynı anda boss: odada ilk 50 skora ulaşan oyuncu boss'u herkes için tetikler (başlangıç zamanı oyun saatine göre)
@@ -338,8 +355,8 @@ io.on('connection', s => {
 setInterval(() => rooms.forEach(r => {
   if (!r.started) return;
   const out = [];
-  r.players.forEach(p => { if (p.alive && p.dirty) { p.dirty = false; const sl = r.slots[p.id], q = p.q; if (sl !== undefined && q && q.length) { for (let i = 0; i < q.length; i++) out.push(sl, q[i][0], q[i][1], q[i][2], q[i][3]); } if (q) q.length = 0; } });
-  if (out.length) io.to(r.code).volatile.emit('P', out);
+  r.players.forEach(p => { if (p.alive && p.dirty) { p.dirty = false; const sl = r.slots[p.id], q = p.q; if (sl !== undefined && q && q.length) { for (let i = 0; i < q.length; i++) out.push(sl, q[i][0], q[i][1], q[i][2], q[i][3], q[i][4] | 0); } if (q) q.length = 0; } });
+  if (out.length) io.to(r.code).volatile.emit('P6', out);
 }), TICK);
 
 // SILENT_MS (4 sn) hiç veri göndermeyen (interneti giden / donmuş) canlı oyuncuyu elenmiş say
