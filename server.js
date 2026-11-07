@@ -20,12 +20,12 @@ io.use((s, next) => { const ip = ipOf(s); if ((connsByIp.get(ip) || 0) >= MAX_CO
 // Ortak olay takvimi: herkes için aynı; t = tur başından ms, d = süre ms (ilk ~2-3 sn uyarı süresidir)
 // wind: yukarı/aşağı rüzgar · rwind: yönü sürekli değişen TERS RÜZGAR · storm: FIRTINA (savurma + şimşek)
 // moon: AY YERÇEKİMİ (hafif) · heavy: AĞIR YERÇEKİMİ · grav: TERS YERÇEKİMİ
-// fog: SİS (görüş azalır) · blackout: ELEKTRİK KESİNTİSİ (ekran kararır) · glide: SÜZÜLME (düşüş hızı sınırlanır)
+// glide: SÜZÜLME (düşüş hızı sınırlanır)
 const EV_PAUSE = { low: 2.2, normal: 1, high: 0.4 };   // olaylar arası bekleme çarpanı (az / normal / sık)
 function makeEvents(freq) {
   const mul = EV_PAUSE[freq] || 1;
-  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'fog', 'blackout', 'glide'];   // fog: SİS · blackout: ELEKTRİK KESİNTİSİ · glide: SÜZÜLME
-  const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, fog: () => 11000 + Math.random() * 3000, blackout: () => 10000 + Math.random() * 2000, glide: () => 10000 + Math.random() * 3000 };
+  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'glide'];   // glide: SÜZÜLME
+  const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, glide: () => 10000 + Math.random() * 3000 };
   let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '';
   while (t < 20 * 60 * 1000) {
     let type; do { type = types[Math.random() * types.length | 0]; } while (type === last);
@@ -55,7 +55,21 @@ const MAX_CONN_PER_IP = 40;        // aynı IP'den en fazla eşzamanlı bağlant
 const MAX_ROOMS_PER_IP = 3;        // aynı IP'nin aynı anda açık tutabileceği oda (okul / ev ağı payı bırakıldı)
 const CREATE_COOLDOWN = 5000;      // iki oda kurma arası en az süre (ms)
 const connsByIp = new Map(), lastCreate = new Map();
-const ipOf = s => { const h = s.handshake || {}, xf = h.headers && h.headers['x-forwarded-for']; return String((xf ? String(xf).split(',')[0] : h.address) || 'x').trim(); };
+// İstemci IP'si. X-Forwarded-For başlığının SOL tarafı istemci tarafından yazılabilir (sahte IP ile limitler aşılabilirdi);
+// yalnızca güvenilir proxy'nin (Render vb.) EKLEDİĞİ sağdaki değerlere güvenilir.
+// TRUST_PROXY_HOPS: sunucunun önündeki güvenilir proxy sayısı (Render için 1 = varsayılan; proxy yoksa 0 yazın)
+const net = require('net');
+const TRUST_PROXY_HOPS = Math.max(0, parseInt(process.env.TRUST_PROXY_HOPS || '1', 10) || 0);
+const normIp = v => { v = String(v || '').trim().replace(/^::ffff:/i, ''); return net.isIP(v) ? v : ''; };
+const ipOf = s => {
+  const h = s.handshake || {}, direct = normIp(h.address) || 'x';
+  if (!TRUST_PROXY_HOPS) return direct;
+  const xf = h.headers && h.headers['x-forwarded-for'];
+  if (!xf) return direct;
+  const parts = String(xf).split(',').map(x => x.trim());
+  // sağdan TRUST_PROXY_HOPS. değer = en dıştaki güvenilir proxy'nin gördüğü gerçek istemci
+  return normIp(parts[parts.length - TRUST_PROXY_HOPS]) || direct;
+};
 // Olay başına bekleme süresi (flood koruması): izin yoksa false döner
 const gate = (s, key, ms) => { const now = Date.now(), g = s.data.gate || (s.data.gate = {}); if (now - (g[key] || 0) < ms) return false; g[key] = now; return true; };
 const clean = (v, n) => String(v || '').replace(/[<>&"'`\u0000-\u001f]/g, '').trim().slice(0, n);
