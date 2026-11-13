@@ -120,7 +120,14 @@ function cleanProf(d) {
 const code = () => { let c; do { c = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPRSTUVYZ'[Math.random() * 21 | 0]).join(''); } while (rooms.has(c)); return c; };
 const num = (v, lo, hi) => (typeof v === 'number' && isFinite(v)) ? Math.max(lo, Math.min(hi, v)) : 0;
 const pub = r => ({ code: r.code, started: r.started, public: !!r.public, name: r.name || '', opts: r.opts, players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, bird: p.bird, host: p.id === r.host, score: p.score, alive: p.alive, ready: !!p.ready })) });
-const push = r => io.to(r.code).emit('room', pub(r));
+// Anlık oda listesi: oda sayısı/oyuncu sayısı/durum değişince lobi listesini açık olan herkese hemen (80 ms toplulaştırılarak) gönderilir
+let _listT = 0;
+function listDirty() {
+  listCache.data = null;
+  if (_listT) return;
+  _listT = setTimeout(() => { _listT = 0; io.to('lobbyWatch').emit('rl', roomList()); }, 80);
+}
+const push = r => { io.to(r.code).emit('room', pub(r)); listDirty(); };
 const connected = r => [...r.players.values()].filter(p => !p.gone);
 function leave(s, why) {
   const r = rooms.get(s.data.room); s.data.room = null;
@@ -132,7 +139,7 @@ function leave(s, why) {
     p.gone = true; p.dirty = false;
     if (p.alive) { p.alive = false; io.to(r.code).emit('gone', { id: p.id, score: p.score }); }
   } else r.players.delete(s.id);
-  if (!connected(r).length) { rooms.delete(r.code); return; }
+  if (!connected(r).length) { rooms.delete(r.code); listDirty(); return; }
   if (p) addChat(r, { s: 1, k: 'l', x: p.name + (why === 'kick' ? ' odadan atıldı' : ' odadan ayrıldı') });
   if (r.host === s.id || !r.players.has(r.host) || r.players.get(r.host).gone) r.host = connected(r)[0].id;
   push(r); check(r);
@@ -144,7 +151,7 @@ function check(r) {
     io.to(r.code).emit('over', pub(r).players.sort((a, b) => b.score - a.score));
     r.players.forEach((p, id) => { if (p.gone) r.players.delete(id); });   // turda kopan oyuncular listeden silinir
     if (!r.players.has(r.host)) { const c = connected(r)[0]; if (c) r.host = c.id; }
-    if (!r.players.size) { rooms.delete(r.code); return; }
+    if (!r.players.size) { rooms.delete(r.code); listDirty(); return; }
     push(r);
   }
 }
@@ -184,7 +191,7 @@ setInterval(() => { lastOn = -1; pushOnline(); }, 15000);
 io.on('connection', s => {
   s.data.t0 = Date.now(); s.data.hb = Date.now();
   connsByIp.set(s.data.ip, (connsByIp.get(s.data.ip) || 0) + 1);
-  s.emit('ver', 7);   // istemci sunucunun güncel olup olmadığını anlasın
+  s.emit('ver', 8);   // istemci sunucunun güncel olup olmadığını anlasın
   s.emit('cfg', { max: MAX });   // oda kapasitesi (istemci göstergeleri buna göre)
   s.on('hb', () => { s.data.hb = Date.now(); });
   s.emit('online', online());   // yayın yalnızca 3 sn'lik zamanlayıcıda (her bağlantıda herkese yayın = O(n²) yük)
@@ -227,6 +234,10 @@ io.on('connection', s => {
   });
   // Herkese açık odalar: henüz başlamamış ve dolu olmayan odalar listelenir
   // Liste 250 ms önbelleğe alınır (çok kişi aynı anda yenilerken sunucu yükü artmasın); sınıra takılan istek de son listeyle yanıtlanır
+  // Lobi listesi açıkken canlı güncelleme: 'watch' 1 → dinlemeye başla, 0 → bırak (bağlantı kopunca otomatik düşer)
+  // Bekleme odasında karakter değiştirme (yalnızca oyun başlamadan): herkesin listesinde avatar anında güncellenir
+  s.on('bird', v => { const r = rooms.get(s.data.room), p = r && r.players.get(s.id); if (!p || r.started || !gate(s, 'bird', 200)) return; p.bird = num(v, 0, 999) | 0; push(r); });
+  s.on('watch', on => { if (on) s.join('lobbyWatch'); else s.leave('lobbyWatch'); });
   s.on('list', cb => {
     if (typeof cb !== 'function') return;
     if (!gate(s, 'list', 250)) return cb(listCache.data || []);
