@@ -38,7 +38,7 @@ function makeEvents(freq) {
   return ev;
 }
 
-const MAX = 12, MAX_ROOMS = 500, TICK = 25, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
+const MAX = 12, MAX_ROOMS = 500, TICK = 16, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
 const BOSS_MS = 20000, BOSS_REST = 4000;   // boss süresi (istemcideki BOSS_DURATION ile aynı) ve iki boss arası en az bekleme
 const BOSS_STEP = { low: 100, normal: 60, high: 30 };   // sonraki boss için gereken skor farkı (sıklık ayarı: az / normal / sık)
 const STEP_MS = 1000 / 60, BOSS_SCORE = 50, BOSS_LEAD = 1500, SPEED_MUL = { slow: 0.7, normal: 1, fast: 1.7 };
@@ -291,7 +291,7 @@ io.on('connection', s => {
     const now = Date.now();
     p.y = Math.round(num(a[0], -5000, 20000) * 10) / 10; p.vy = num(a[1], -2000, 2000) | 0; p.st = num(a[3], 0, 1e9) | 0; p.jc = num(a[4], 0, 1e7) | 0; p.dirty = true; p.last = now;
     // Örnek kuyruğa da eklenir: yayın zamanlayıcısı ile istemci gönderim zamanlayıcısı birbirine denk gelmediğinde örnekler kaybolmaz / ezilmez (takılmanın ana nedeniydi)
-    const q = p.q || (p.q = []); if (!q.length || p.st > q[q.length - 1][3]) { q.push([p.y, p.vy, 0, p.st, p.jc]); if (q.length > 6) q.shift(); }
+    const q = p.q || (p.q = []); if (!q.length || p.st > q[q.length - 1][3]) { q.push([p.y, p.vy, 0, p.st, p.jc]); if (q.length > 10) q.shift(); }
     if (!okScore(r, p, num(a[2], 0, 1e7) | 0, now, s)) return;
     if (p.q && p.q.length) p.q[p.q.length - 1][2] = p.score;
     // Herkesle aynı anda boss: odada ilk 50 skora ulaşan oyuncu boss'u herkes için tetikler (başlangıç zamanı oyun saatine göre)
@@ -362,7 +362,7 @@ io.on('connection', s => {
   });
 });
 
-// 40 Hz toplu konum yayını (kuyruktaki tüm örneklerle): [slot, y, vy, skor, oyun adımı, ...] (adım numarası sayesinde herkes konumu aynı oyun zamanında çizer)
+// 60 Hz toplu konum yayını (kuyruktaki tüm örneklerle): [slot, y, vy, skor, oyun adımı, ...] (adım numarası sayesinde herkes konumu aynı oyun zamanında çizer)
 setInterval(() => rooms.forEach(r => {
   if (!r.started) return;
   const out = [];

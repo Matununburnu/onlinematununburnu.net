@@ -4364,10 +4364,16 @@ let pipeTimer = 0;
 let currentGap = 600;
 let pipeInterval = 85;   // iki boru arası kaç karede bir yeni boru çıkar (çok oyunculuda harita genişliğine göre büyür)
 const FIXED_DT = 1000 / 60;
+function _resK(iw) {   // iç çözünürlük katsayısı: telefonlarda cihaz piksel oranı kullanılır (keskin görüntü), toplam piksel sayısı sınırlanır (kasma olmasın)
+    const q = (typeof _qScale === 'number' ? _qScale : 1);
+    if (!IS_MOBILE) return Math.min(1, 2560 / iw) * q;
+    const ih = window.innerHeight || 1, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    return Math.min(dpr, Math.sqrt(1.4e6 / (iw * ih))) * q;
+}
 function _applyCanvasSize() {
     // Oyun 1920x1080 tasarım alanında çiziliyor; daha büyük ekranlarda iç çözünürlüğü sınırla,
     // CSS zaten canvas'ı ekrana sığdırıyor. 2K/4K ekranlarda ciddi akıcılık kazandırır.
-    const k = Math.min(1, (IS_MOBILE ? 1280 : 2560) / window.innerWidth) * (typeof _qScale === 'number' ? _qScale : 1);
+    const k = _resK(window.innerWidth);
     canvas.width = Math.round(window.innerWidth * k);
     canvas.height = Math.round(window.innerHeight * k);
 }
@@ -5250,10 +5256,29 @@ function populateCharacterMenu() {
     container.appendChild(frag);
 }
 let _lastHoverPop = 0;
+let _hvCtx = null, _hvBuf = null, _hvGain = null;
+function _hvInit() {
+    if (_hvCtx) { if (_hvCtx.state === 'suspended') _hvCtx.resume().catch(() => {}); return; }
+    try {
+        _hvCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+        _hvGain = _hvCtx.createGain(); _hvGain.connect(_hvCtx.destination);
+        const src = (hoverSound.querySelector('source') || {}).src || 'assets/sounds/cute_hover.mp3';
+        fetch(src).then(r => r.arrayBuffer()).then(ab => new Promise((ok, no) => _hvCtx.decodeAudioData(ab, ok, no))).then(b => { _hvBuf = b; }).catch(() => {});
+    } catch (e) { _hvCtx = null; }
+}
+['pointerdown', 'touchstart', 'keydown', 'mouseover'].forEach(ev => document.addEventListener(ev, _hvInit, { once: false, passive: true, capture: true }));
 function playInvHoverPop() {
     const t = performance.now();
-    if (t - _lastHoverPop < 160) return;
+    if (t - _lastHoverPop < 50) return;
     _lastHoverPop = t;
+    if (_hvCtx && _hvBuf) {   // hazır ses: çözme gecikmesi yok, anında çalar
+        try {
+            if (_hvCtx.state === 'suspended') _hvCtx.resume().catch(() => {});
+            _hvGain.gain.value = Math.max(0, Math.min(1, (effectsVolume / 100) * 0.35));
+            const bs = _hvCtx.createBufferSource(); bs.buffer = _hvBuf; bs.connect(_hvGain); bs.start(0);
+            return;
+        } catch (e) {}
+    }
     try {
         const a = hoverSound.cloneNode(true);
         a.volume = Math.max(0, Math.min(1, (effectsVolume / 100) * 0.35));
@@ -6185,10 +6210,24 @@ function _pipeSource() {   // pipe.png çok büyükse ekran çözünürlüğüne
     if (_pipeSpr && _pipeSpr.width === tw && _pipeSpr.height === th) return _pipeSpr;
     try { const c = document.createElement('canvas'); c.width = tw; c.height = th; c.getContext('2d').drawImage(pipeImg, 0, 0, tw, th); return _pipeSpr = c; } catch (e) { return pipeImg; }
 }
+var _pvOn = false;   // dikey (portre) ekran düzeni
 function draw() {
 
     ctx.save();
-    ctx.scale(canvas.width / designWidth, canvas.height / designHeight);
+    if (_pvOn && !MP.on && !MP.wide) {
+        const _s = canvas.width / 1300, _oy = (canvas.height - designHeight * _s) / 2;
+        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (gameState === 'menu') { const _k = canvas.height / designHeight; ctx.translate((canvas.width - designWidth * _k) / 2, 0); ctx.scale(_k, _k); }
+        else {
+            const _bi = (!nightMode && specialBgMode && backgroundSpecial.naturalWidth) ? backgroundSpecial : backgroundDay;
+            if (!videoMode && !(activeRandomVideo && activeRandomVideo.style.display !== 'none') && _bi && _bi.naturalWidth) {
+                const _c = Math.max(canvas.width / _bi.naturalWidth, canvas.height / _bi.naturalHeight), _w = _bi.naturalWidth * _c, _h = _bi.naturalHeight * _c;
+                ctx.drawImage(_bi, (canvas.width - _w) / 2, (canvas.height - _h) / 2, _w, _h);
+                ctx.fillStyle = 'rgba(6,6,30,.55)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            ctx.translate(0, _oy); ctx.scale(_s, _s); ctx.beginPath(); ctx.rect(0, 0, designWidth, designHeight); ctx.clip();
+        }
+    } else ctx.scale(canvas.width / designWidth, canvas.height / designHeight);
     ctx.clearRect(0, 0, designWidth, designHeight);
     // Aktif random video varsa arka planı çizme
     const _av = activeRandomVideo;
@@ -6387,7 +6426,7 @@ function _adaptQuality(ts) {
         if (_qRaised > 0) _qRaised--;
         if (_qCool > 0) { _qCool--; return; }
         if (avg > Math.max(22, _dispMs * 1.3) && _qScale > 0.6) {   // 30 Hz ekranda boşuna çözünürlük düşürme
-            _qScale = Math.max(0.6, _qScale - 0.1);
+            _qScale = Math.max(0.75, _qScale - 0.1);
             if (_qRaised > 0) _qMax = _qScale;   // yükseltince hemen tekrar yavaşladıysa bu seviyenin üstüne çıkma (salınım olmasın)
             _qGood = 0; _applyCanvasSize(); _qCool = 2;
         } else if (avg < Math.max(18.5, _dispMs * 1.11) && _qScale < _qMax) {
@@ -6494,7 +6533,7 @@ function flap() {
         bird.vy = bird.flap;
         if (jumpSoundAllowed) playJumpSoundFast();
         jumpAnimTimer = performance.now() + 167; // animasyon bitiş zamanı
-        if (typeof MP !== 'undefined' && MP.on) MP.jc = (MP.jc | 0) + 1;   // çok oyunculu: her zıplama sayılır, konum paketiyle herkese gider (diğerlerinde zıplama animasyonu için)
+        if (typeof MP !== 'undefined' && MP.on) { MP.jc = (MP.jc | 0) + 1; if (window._mpSendPos) setTimeout(window._mpSendPos, 0); }   // çok oyunculu: her zıplama sayılır, konum paketiyle herkese gider (diğerlerinde zıplama animasyonu için)
         jumpCount++;
         questEvent('jumps', 1);
         if(jumpCount >= 10) checkAchievement('jump10');
@@ -6805,12 +6844,12 @@ function _isPortraitLock() {
 function handleResize() {
     _applyCanvasSize();
     const lock = _isPortraitLock();
-    if (lock && gameState === 'playing' && !MP.on && !_rotPause) _rotPause = true;
-    if (_rotPause) _rotOverlay(!lock);   // dikeyken yatay uyarı görünür; yataya dönünce "devam için dokun"
-    if (_rotPause && gameState !== 'playing') _rotResume();
-    document.body.classList.toggle('portraitLock', lock);
-    canvas.style.display = lock ? 'none' : 'block';
-    rotateMsg.style.display = '';   // görünürlüğü yalnızca body.portraitLock CSS'i yönetir
+    _pvOn = lock;
+    if (_rotPause) _rotResume();
+    document.body.classList.toggle('portrait', lock);
+    document.body.classList.remove('portraitLock');
+    canvas.style.display = 'block';
+    rotateMsg.style.display = 'none';
 }
 let _rzT = 0; window.addEventListener('resize', () => { if (_rzT) return; _rzT = requestAnimationFrame(() => { _rzT = 0; handleResize(); }); });   // sürükleme sırasında kare başına bir kez
 window.addEventListener('orientationchange', () => { handleResize(); setTimeout(handleResize, 250); });
@@ -9961,6 +10000,73 @@ function _mpWide(on) {
 @media (max-height:480px){#mpEvHud{top:52px;min-width:200px;padding:6px 14px 6px;font-size:11px}#mpEvHud .eb{margin-top:5px;height:8px}#mpEvHud .et{font-size:11px;margin-top:2px}}
 `;
     document.head.appendChild(cssX);
+
+    const cssZ = document.createElement('style');
+    cssZ.textContent = `
+#mpBox{background:radial-gradient(ellipse at 50% 0%,rgba(122,44,255,.3),transparent 62%),rgba(4,4,18,.82)}
+#mpBox #mpIn{border-radius:30px;border:1px solid rgba(170,150,255,.28);background:linear-gradient(90deg,#7fe7ff,#7a2cff 55%,#ff3cac) top/100% 3px no-repeat,radial-gradient(120% 55% at 50% 0%,rgba(122,44,255,.3),transparent 70%),linear-gradient(180deg,#1b1450,#0a0a24);box-shadow:0 30px 80px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06),0 0 60px rgba(122,44,255,.22)}
+#mpBox #mpIn:not(.wide){width:min(440px,92vw);padding:26px 22px 20px}
+#mpBox #mpIn .mpEmb{width:58px;height:58px;margin:0 auto 12px;display:grid;place-items:center;font-size:28px;border-radius:18px;transform:rotate(-4deg);background:linear-gradient(145deg,rgba(127,231,255,.28),rgba(122,44,255,.4));border:1px solid rgba(255,255,255,.28);box-shadow:0 10px 24px rgba(122,44,255,.42),inset 0 1px 0 rgba(255,255,255,.35)}
+#mpBox #mpIn h3{font:400 15px/1.4 'Press Start 2P',cursive;letter-spacing:1px;color:#fff;text-shadow:0 3px 0 #3a1a9a,0 0 18px rgba(127,231,255,.4)}
+#mpBox #mpIn h3.mpRh{font:900 20px/1.3 Roboto,sans-serif;letter-spacing:.5px;text-shadow:0 2px 0 #3a1a9a}
+#mpBox #mpIn h3.mpRh .mpLb{font:700 12px Roboto,sans-serif;letter-spacing:.5px;color:#9fe9ff;display:block;margin:0 0 2px;text-shadow:none}
+#mpBox #mpIn .sub{opacity:.72;font-size:12px;line-height:1.45;margin-top:6px}
+#mpBox #mpIn .mpNmBox,#mpBox #mpIn .mpRnBox{padding:14px 16px;border-radius:20px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+#mpBox #mpIn .mpNmBox label,#mpBox #mpIn .mpRnBox label{text-transform:none;letter-spacing:.3px;font:800 12px Roboto,sans-serif;opacity:.8;margin:0 0 9px 2px}
+#mpBox #mpIn .mpRnBox label small{font-weight:600;opacity:.65;margin-left:auto}
+#mpBox #mpIn .mpNmBox .mpAv{width:46px;height:46px;box-shadow:0 0 0 2px rgba(127,231,255,.55),0 0 18px rgba(127,231,255,.25)}
+#mpBox #mpIn .mpNmBox input,#mpBox #mpIn .mpRnBox input{font:800 16px Roboto,sans-serif;padding:13px 14px;border-radius:14px;border:1.5px solid rgba(255,255,255,.16);background:rgba(0,0,0,.3)}
+#mpBox #mpIn .mpNmBox input:focus,#mpBox #mpIn .mpRnBox input:focus,#mpBox #mpIn .mpSearchBox input:focus{border-color:#7fe7ff;box-shadow:0 0 0 3px rgba(127,231,255,.15)}
+#mpBox #mpIn .mpRnCnt{padding:3px 8px;border-radius:9px;background:rgba(0,0,0,.35);opacity:.75}
+#mpBox #mpIn .mpChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+#mpBox #mpIn .mpChip{padding:6px 12px;border-radius:999px;cursor:pointer;color:#cfefff;font:700 11px Roboto,sans-serif;background:rgba(127,231,255,.1);border:1px solid rgba(127,231,255,.3);transition:background .15s,transform .09s}
+#mpBox #mpIn .mpChip:hover{background:rgba(127,231,255,.22)}#mpBox #mpIn .mpChip:active{transform:scale(.95)}
+#mpBox #mpIn .mpPrim{justify-content:flex-start;gap:14px;min-height:66px;padding:0 20px;text-align:left;border-radius:20px}
+#mpBox #mpIn .mpBi{font-size:28px}
+#mpBox #mpIn .mpBt{display:flex;flex-direction:column;gap:2px}
+#mpBox #mpIn .mpBt b{font:900 16px Roboto,sans-serif;letter-spacing:1.2px}
+#mpBox #mpIn .mpBt small{font:700 11px Roboto,sans-serif;opacity:.72}
+#mpBox #mpIn .mpRow{gap:6px;padding:5px;border-radius:18px;background:rgba(0,0,0,.3);border:1.5px solid rgba(255,255,255,.12);transition:border-color .15s,box-shadow .15s}
+#mpBox #mpIn .mpRow:focus-within{border-color:#7fe7ff;box-shadow:0 0 0 3px rgba(127,231,255,.14)}
+#mpBox #mpIn .mpRow input{background:transparent;border:0;font:900 18px Roboto,monospace;letter-spacing:9px}
+#mpBox #mpIn .mpRow .btn{min-height:42px;padding:0 22px;border-radius:13px}
+#mpBox #mpIn .or{opacity:.55;font-size:11px;letter-spacing:.5px}
+#mpBox #mpIn .mpPh{padding:0 2px;font-size:12px;letter-spacing:1px}
+#mpBox #mpIn .mpSearchBox input{padding:11px 14px 11px 36px;border-radius:15px;background:rgba(0,0,0,.3)}
+#mpBox #mpIn .mpRoom{padding:11px 12px;border-radius:16px;background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.1);transition:transform .12s,border-color .12s}
+#mpBox #mpIn .mpRoom:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.25)}
+#mpBox #mpIn .mpRoom.pub{border-left:3px solid #2ee56a}#mpBox #mpIn .mpRoom.priv{border-left:3px solid #ffb02e}
+#mpBox #mpIn .mpRi b{color:#fff;font-size:14px}
+#mpBox #mpIn .mpRoomName{color:rgba(255,226,122,.88);font-size:11px;font-weight:700}
+#mpBox #mpIn .mpCnt{padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.12)}
+#mpBox #mpIn .mpGoBtn{min-height:36px;padding:0 14px;border-radius:12px}
+#mpBox #mpIn #mpPubList.sub{padding:26px 12px;border-radius:16px;border:1.5px dashed rgba(255,255,255,.18);background:rgba(255,255,255,.03);opacity:.8}
+#mpBox #mpIn #mpPubList.sub::before{content:'🛰️';display:block;font-size:30px;margin-bottom:8px}
+#mpBox #mpIn .mpRef{background:rgba(255,255,255,.08);box-shadow:none;border:1px solid rgba(255,255,255,.18);text-shadow:none;font-size:12px;letter-spacing:1.5px}
+#mpBox #mpIn .mpSw{padding:13px 14px;border-radius:18px}
+#mpBox #mpIn .mpCodeBox{border-radius:20px;background:linear-gradient(135deg,rgba(127,231,255,.1),rgba(122,44,255,.16));border:1.5px dashed rgba(127,231,255,.45)}
+#mpBox #mpIn .mpLockIco{box-shadow:0 0 0 6px rgba(255,176,46,.1),0 0 30px rgba(255,176,46,.25)}
+#mpBox #mpIn #mpList .mpP{padding:9px 12px;border-radius:15px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+#mpBox #mpIn #mpList .mpP.me{outline:0;border-color:rgba(127,231,255,.55);background:linear-gradient(90deg,rgba(127,231,255,.18),rgba(255,255,255,.05))}
+#mpBox #mpIn #mpList .mpP .mpMd{font-size:17px;min-width:30px}
+#mpBox #mpIn .mpWinBar{padding:11px 14px;border-radius:16px;text-align:center;font:700 13px Roboto,sans-serif;color:#ffe9a0;background:linear-gradient(135deg,rgba(255,210,63,.24),rgba(255,154,0,.08));border:1px solid rgba(255,210,63,.45)}
+#mpBox #mpIn .mpWinBar b{color:#fff;font-weight:900}
+#mpBox #mpIn .mpPodium{display:flex;align-items:flex-end;justify-content:center;gap:8px;margin:14px 0 4px}
+#mpBox #mpIn .mpPc{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center}
+#mpBox #mpIn .mpPc .mpAv{width:46px;height:46px;box-shadow:0 0 0 2px #cfd8e8}
+#mpBox #mpIn .mpPc.p1 .mpAv{width:62px;height:62px;box-shadow:0 0 0 3px #ffd23f,0 0 26px rgba(255,210,63,.55)}
+#mpBox #mpIn .mpPc.p3 .mpAv{box-shadow:0 0 0 2px #d9894a}
+#mpBox #mpIn .mpPm{font-size:22px;line-height:1}
+#mpBox #mpIn .mpPc b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 12px Roboto,sans-serif}
+#mpBox #mpIn .mpPc.me b{color:#7fe7ff}
+#mpBox #mpIn .mpPs{font:800 11px Roboto,sans-serif;color:#ffe27a;margin-bottom:4px}
+#mpBox #mpIn .mpPb{width:100%;height:54px;display:flex;justify-content:center;padding-top:7px;border-radius:12px 12px 0 0;background:linear-gradient(180deg,rgba(255,255,255,.2),rgba(255,255,255,.04));border:1px solid rgba(255,255,255,.14);border-bottom:0}
+#mpBox #mpIn .mpPc.p1 .mpPb{height:92px;background:linear-gradient(180deg,rgba(255,210,63,.42),rgba(255,154,0,.08));border-color:rgba(255,210,63,.5)}
+#mpBox #mpIn .mpPc.p2 .mpPb{height:70px}
+#mpBox #mpIn .mpPb i{font:400 14px 'Press Start 2P',cursive;font-style:normal;opacity:.85}
+#mpBox #mpIn .mpNext{color:#fff;background:linear-gradient(135deg,#00c6ff,#7a2cff);box-shadow:0 10px 26px rgba(0,150,255,.4),inset 0 -3px 0 rgba(30,0,90,.35)}
+`;
+    document.head.appendChild(cssZ);
     const cnt = document.createElement('div'); cnt.id = 'mpCount'; document.body.appendChild(cnt);
     const toastBox = document.createElement('div'); toastBox.id = 'mpToasts'; document.body.appendChild(toastBox);
     function mpToast(name, remain) {
@@ -10078,10 +10184,10 @@ function _mpWide(on) {
     function lobby() {
         _waitUI = false;
         const n = (playerNameInput.value || '').trim();
-        inn.innerHTML = '<div class="mpTop"><h3>👥 ÇOK OYUNCULU</h3><div class="sub">Aynı haritada yarış · en fazla ' + MP.max + ' oyuncu</div></div>'
+        inn.innerHTML = '<div class="mpTop"><div class="mpEmb">👥</div><h3>ÇOK OYUNCULU</h3><div class="sub">Aynı haritada yarış · en fazla ' + MP.max + ' oyuncu</div></div>'
             + '<div class="mpGrid"><div class="mpCol">'
             + '<div class="mpNmBox"><label>Oyuncu Adı</label><div class="mpNmTop">' + avatar(selectedBird) + '<input id="mpName" maxlength="12" autocomplete="off" placeholder="İsmin" value="' + esc(n) + '"></div></div>'
-            + '<button class="btn" id="mpNew">🏠 ODA KUR</button><div class="or">veya koda katıl</div>'
+            + '<button class="btn mpPrim" id="mpNew"><span class="mpBi">🏠</span><span class="mpBt"><b>ODA KUR</b><small>Kendi odanı aç, arkadaşlarını çağır</small></span></button><div class="or">veya koda katıl</div>'
             + '<div class="mpRow"><input id="mpCode" maxlength="4" placeholder="KOD" autocomplete="off"><button class="btn" id="mpJoin">KATIL</button></div>'
             + '<div id="mpBackBox"></div><div id="mpErr"></div><button class="btn sec" id="mpClose">KAPAT</button></div>'
             + '<div class="mpCol"><div class="mpPh"><b>AÇIK ODALAR</b><span>🔓 herkes girebilir · 🔒 yalnızca kodla</span></div>'
@@ -10108,8 +10214,8 @@ function _mpWide(on) {
     // ODA KUR'a basınca: oda adı ekranı (en az 1, en çok 30 karakter)
     function roomNameStep(n) {
         _waitUI = false; clearInterval(_pubT);
-        inn.innerHTML = '<h3>🏷️ ODA ADI</h3><div class="sub">Odana bir ad ver · en az 1, en çok 30 karakter</div>'
-            + '<div class="mpRnBox"><label>🏷️ Oda Adı</label><div class="mpRnRow"><input id="mpRoomName" maxlength="30" autocomplete="off" placeholder="Örn: Kuşçular Kampı"><span class="mpRnCnt" id="mpRnCnt">0/30</span></div></div>'
+        inn.innerHTML = '<div class="mpTop"><div class="mpEmb">🏠</div><h3>ODANI KUR</h3><div class="sub">Odana bir ad ver, sonra kimlerin girebileceğini seç</div></div>'
+            + '<div class="mpRnBox"><label>Oda adı <small>en az 1, en çok 30 karakter</small></label><div class="mpRnRow"><input id="mpRoomName" maxlength="30" autocomplete="off" placeholder="Örn: Kuşçular Kampı"><span class="mpRnCnt" id="mpRnCnt">0/30</span></div><div class="mpChips">' + ['Kuşçular Kampı', 'Boru Avcıları', 'Gökyüzü Ligi', 'Uçan Dostlar'].map(s => '<button type="button" class="mpChip">' + s + '</button>').join('') + '</div></div>'
             + swHtml('mpPubSw', false) + '<div id="mpErr"></div><button class="btn wait" id="mpMk" disabled>🏠 ODAYI KUR</button><button class="btn sec" id="mpMkBack">← GERİ</button>';
         const inp = $('mpRoomName'), mk = $('mpMk'); let pubSel = false;
         const psw = $('mpPubSw'); psw.onclick = () => { pubSel = !pubSel; swUpd(psw, pubSel); };
@@ -10117,6 +10223,7 @@ function _mpWide(on) {
         const create = () => { const rn = inp.value.trim().slice(0, 30); if (rn.length < 1) return err('Oda adı en az 1 karakter olmalı.'); go('Oda kuruluyor…', n, { name: n, rname: rn, bird: selectedBird, public: pubSel }, 'create', rn); };
         inp.oninput = upd; inp.onkeydown = e => { if (e.key === 'Enter') create(); };
         mk.onclick = create; $('mpMkBack').onclick = () => lobby();
+        inn.querySelectorAll('.mpChip').forEach(c => c.onclick = () => { inp.value = c.textContent; upd(); inp.focus(); });
         setTimeout(() => inp.focus(), 50);
     }
     // Tıklanınca ANINDA oda ekranı açılır; sunucu yanıtı/bağlantı arkada tamamlanır
@@ -10437,9 +10544,9 @@ function _mpWide(on) {
         let top, left;
         if (showRes) {
             const w = list[0];
-            top = '<div class="mpTop"><h3>🏁 SONUÇLAR</h3><div class="sub">' + (r.name ? esc(r.name) + ' · ' : '') + meta + '</div></div>';
+            top = '<div class="mpTop"><div class="mpEmb">🏁</div><h3>SONUÇLAR</h3><div class="sub">' + (r.name ? esc(r.name) + ' · ' : '') + meta + '</div></div>';
             const myIdx = list.findIndex(p => p.id === me), myP = list[myIdx];
-            left = '<div class="mpWin"><div class="mpWinIc">🏆</div><small>KAZANAN</small><b>' + esc(w.name) + '</b><span>' + w.score + ' puan</span></div>'
+            left = '<div class="mpWinBar">🏆 <b>' + esc(w.name) + '</b> kazandı · ' + w.score + ' puan</div>' + (() => { const pod = list.slice(0, 3), md = ['🥇', '🥈', '🥉'], ord = pod.length === 1 ? [0] : pod.length === 2 ? [1, 0] : [1, 0, 2]; return '<div class="mpPodium">' + ord.map(i => { const p = pod[i]; return '<div class="mpPc p' + (i + 1) + (p.id === me ? ' me' : '') + '"><span class="mpPm">' + md[i] + '</span>' + avatar(p.bird) + '<b>' + esc(p.name) + '</b><span class="mpPs">' + p.score + ' puan</span><div class="mpPb"><i>' + (i + 1) + '</i></div></div>'; }).join('') + '</div>'; })()
                 + (myP ? '<div class="mpResMe">' + (['🥇', '🥈', '🥉'][myIdx] || '🎯') + ' Senin sıran: <b>' + (myIdx + 1) + '.</b> · ' + myP.score + ' puan</div>' : '');
         } else {
             top = '<div class="mpTop"><h3 class="mpRh"><small class="mpLb">ODA ADI:</small> ' + (r.name ? esc(r.name) : '—') + '</h3></div>';
@@ -10857,9 +10964,10 @@ function _mpWide(on) {
           } }
     }, 50);
     // Konum gönderimi: 30 Hz (eskiden 20 Hz) ve diğer işlerden bağımsız zamanlayıcıda
-    setInterval(() => {
+    window._mpSendPos = () => {
         if (MP.on && MP.sock && MP.sock.connected && (gameState === 'playing' || (gameState === 'ready' && MP.slots))) MP.sock.volatile.emit('s', [Math.round(bird.y * 10) / 10, Math.round(bird.vy * 10), score, MP.steps | 0, MP.jc | 0]);
-    }, 33);
+    };
+    setInterval(window._mpSendPos, 16);   // 60 Hz
     // Sekme arka plandayken tarayıcı çizimi durdurur: oyunu zamanla ilerlet (kuş düşmeye, yerçekimi/borular akmaya devam eder)
     setInterval(() => {
         if (!MP.on || !MP.go || !MP.startAt || !document.hidden || gameState !== 'playing') return;
@@ -11220,7 +11328,7 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
         if (!MP.wide) { MP._m = 0; MP._mr = 0; ['width', 'height', 'top', 'left', 'transform', 'border'].forEach(k => canvas.style[k] = ''); if (_mpBgCv) _mpBgCv.style.display = 'none'; return _acs.apply(this, arguments); }
         const iw = window.innerWidth, ih = window.innerHeight, A = designWidth / designHeight;
         let cw = iw, ch = iw / A; if (ch > ih) { ch = ih; cw = ih * A; }
-        const k = Math.min(1, (IS_MOBILE ? 1280 : 2560) / iw) * (typeof _qScale === 'number' ? _qScale : 1);
+        const k = _resK(iw);
         const lm = (iw - cw) / 2, ext = lm > 1 ? lm : 0, extR = ext ? Math.min(ext, cw * _MP_PADF) : 0;   // sol + SAĞ boşluk da canvas'a katılır (borular iki kenara kadar kayar, görsel kesilmez)
         MP._m = ext ? ext / (cw / designWidth) : 0; MP._mr = extR ? extR / (cw / designWidth) : 0;
         canvas.width = Math.round((cw + ext + extR) * k); canvas.height = Math.round(ch * k);
@@ -11287,7 +11395,7 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
     function _mpCamTick() {   // karede bir kez: zoom ve kamera yüksekliğini yumuşat
         const now = performance.now(), dt = Math.min(100, _mpCamT ? now - _mpCamT : 16); _mpCamT = now;
         if (!MP.on || !MP.wide) { MP.cy = undefined; MP.z = MP.zT; return; }
-        MP.zT = Math.max(1, Math.min(_mpZMax(), MP.zT));
+        MP.zT = _pvOn ? _mpZMax() : Math.max(1, Math.min(_mpZMax(), MP.zT));
         MP.z += (MP.zT - MP.z) * (1 - Math.exp(-dt / 90));
         if (Math.abs(MP.zT - MP.z) < 0.002) MP.z = MP.zT;
         // Kuş her zıpladığında ekran sallanmasın: kamera yalnızca kuş ölü bölgenin (dikey ~%32) dışına çıkınca ve çok yumuşak takip eder
@@ -11399,7 +11507,7 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
             // Kare süresi (oyun adımı cinsinden): tampon ve yumuşatma kare hızından bağımsız çalışır
             let fdt = o.tf ? (now - o.tf) / STEP_MS : 1; o.tf = now; if (!(fdt > 0) || fdt > 6) fdt = 1;
             // Gecikme tamponu: hedef ağ gecikmesine göre belirlenir ama YAVAŞ ve sınırlı hızda değişir (hızlı değişim kuşun hızını bozup takılma yaratıyordu)
-            const Dt = Math.max(5, Math.min(18, o.lagMax + 3.5));
+            const Dt = Math.max(4, Math.min(18, o.lagMax + 3));
             o.D += Math.max(-0.008 * fdt, Math.min(0.02 * fdt, Dt - o.D));
             const tt = el - o.D;
             let x = Math.max(sz / 2 + 4, _mpLaneX(MP.slots[id]) + currentSpeed * o.D);   // o anki boru düzenine göre hizala
@@ -11692,3 +11800,34 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
     restore().then(function (r) { clearTimeout(t); startMain(); }, function () { clearTimeout(t); startMain(); });
 })();
 </script>
+<style id="mobileFix">
+@media (pointer:coarse), (max-width:768px) {
+  .gameNotif { left:50% !important; right:auto !important; top:56px !important; transform:translateX(-50%) !important; font-size:clamp(7px,2.1vw,10px) !important; line-height:1.5 !important; padding:5px 10px !important; border-width:2px !important; border-radius:9px !important; max-width:78vw !important; white-space:normal !important; }
+  #bigCenterText { font-size:clamp(14px,4.4vw,24px) !important; letter-spacing:1px !important; max-width:84vw !important; }
+  #bossHUD { top:44px !important; font-size:9px !important; padding:5px 12px !important; border-width:2px !important; border-radius:10px !important; }
+  #milestoneEventHUD { top:94px !important; font-size:10px !important; padding:6px 12px !important; border-width:2px !important; border-radius:10px !important; max-width:86vw !important; }
+  #activePowerupHUD { top:96px !important; right:8px !important; font-size:7px !important; padding:5px 7px !important; border-width:1.5px !important; border-radius:9px !important; max-width:34vw !important; }
+  body.mpHideLb #activePowerupHUD { right:auto !important; left:8px !important; top:8px !important; }
+  #nextVideoIndicator { font-size:7px !important; padding:5px 10px !important; top:8px !important; right:8px !important; }
+  .mpToast { font-size:10px !important; padding:5px 11px !important; gap:6px !important; white-space:normal !important; max-width:80vw; }
+  #mpEvHud { min-width:0 !important; width:min(82vw,300px); padding:6px 12px !important; font-size:11px !important; }
+  #leaderboard, body.spPlay #leaderboard { width:min(148px,40vw) !important; }
+  #leaderboardList .lbRow { font-size:9px !important; padding:2px 6px !important; }
+}
+@media (pointer:coarse) and (max-height:520px) {
+  #ui { font-size:24px !important; padding:3px 18px !important; top:8px !important; }
+  #goldDisplay { transform:scale(.8); transform-origin:top right; top:8px !important; right:10px !important; }
+}
+body.portrait #ui { top:10px !important; font-size:26px !important; padding:3px 18px !important; }
+body.portrait #goldDisplay { top:10px !important; right:8px !important; transform:scale(.78); transform-origin:top right; }
+body.portrait #ticketDisplay { top:52px !important; right:8px !important; transform:scale(.78); transform-origin:top right; }
+body.portrait #leaderboard { top:60px !important; left:8px !important; }
+body.portrait #mpHud { top:60px !important; right:6px !important; }
+body.portrait .gameNotif { top:auto !important; bottom:5vh !important; }
+body.portrait #bigCenterText { top:34% !important; }
+body.portrait #bossHUD { top:auto !important; bottom:14vh !important; }
+body.portrait #milestoneEventHUD { top:auto !important; bottom:20vh !important; }
+body.portrait #mpEvHud { top:auto !important; bottom:14vh !important; }
+body.portrait #mpToasts { top:auto !important; bottom:10vh !important; flex-direction:column-reverse; }
+body.portrait #activePowerupHUD { top:112px !important; }
+</style>
