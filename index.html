@@ -2974,7 +2974,7 @@ html body #mpEvBadge { background: rgba(10,12,30,.82) !important; }
 #revealFrame::before { content: ''; position: absolute; inset: -60%; animation: coSpin 6s linear infinite;
     background: conic-gradient(var(--rc), rgba(255,255,255,.9), var(--rc), color-mix(in srgb, var(--rc) 25%, transparent), var(--rc)); }
 #revealFrame::after { content: ''; position: absolute; inset: 5px; border-radius: 25px; background: radial-gradient(circle at 50% 35%, #261c66, #0a0a22 78%); }
-#revealBirdImg { position: absolute; inset: 5px; z-index: 2; width: calc(100% - 10px); height: calc(100% - 10px); object-fit: contain; border-radius: 25px; display: block; margin: 0; animation: none; }
+#revealBirdImg { position: absolute; inset: 5px; z-index: 2; width: calc(100% - 10px); height: calc(100% - 10px); object-fit: cover; object-position: center; border-radius: 25px; display: block; margin: 0; animation: none; }
 #revealName { margin: 0 0 12px; font: 800 clamp(20px, 5.4vw, 27px) 'Roboto', sans-serif; letter-spacing: 3px; color: #fff; text-shadow: 0 0 20px var(--rc), 0 2px 0 rgba(0,0,0,.6); word-break: break-word; animation: rvUp .45s .3s both; }
 #revealRarity { margin: 0 0 14px; padding: 7px 22px; border-radius: 30px; display: inline-block; font: 800 13px 'Roboto', sans-serif; letter-spacing: 3px; animation: rvUp .45s .4s both; }
 #chestReveal[data-rar="legendary"] #revealRarity, #chestReveal[data-rar="mythic"] #revealRarity { animation: rvUp .45s .4s both, rvPulse 1.4s 1s ease-in-out infinite alternate; }
@@ -3009,6 +3009,100 @@ html body #mpEvBadge { background: rgba(10,12,30,.82) !important; }
 #profileModal.pfLoading #pfAvatar { opacity: 0; }
 .pfFade { animation: uiFade .2s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .sk-bar, .pfFade { animation: none !important; } }
+</style>
+<style id="mpPolish">
+/* ===== Çok oyunculu menü cilası: hafif (blur / sürekli animasyon yok, yalnızca transform + opacity geçişleri) ===== */
+#mpBox{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:radial-gradient(ellipse at 50% 0%,rgba(122,44,255,.28),transparent 60%),rgba(4,4,16,.95)!important}
+#mpBox #mpIn{box-shadow:0 24px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.07)!important}
+/* ÜST KISIM */
+#mpBox #mpIn .mpTop{position:relative;padding:2px 0 16px;margin-bottom:14px}
+#mpBox #mpIn .mpTop::after{content:'';position:absolute;left:12%;right:12%;bottom:0;height:1px;background:linear-gradient(90deg,transparent,rgba(127,231,255,.5),rgba(255,60,172,.45),transparent)}
+#mpBox #mpIn .mpEmb{position:relative!important;width:64px!important;height:64px!important;margin:0 auto 12px!important;border-radius:50%!important;transform:none!important;font-size:28px!important;display:grid!important;place-items:center!important;
+  background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.28),transparent 46%),linear-gradient(145deg,#2a8cff,#7a2cff 60%,#ff3cac)!important;
+  border:0!important;box-shadow:0 0 0 4px rgba(127,231,255,.12),0 0 0 5px rgba(127,231,255,.28),0 10px 24px rgba(122,44,255,.45)!important}
+#mpBox #mpIn .mpTop h3{font:900 19px/1.2 Roboto,sans-serif;letter-spacing:5px;margin:0 0 9px;text-shadow:none;color:#fff;
+  background:linear-gradient(90deg,#aef0ff,#fff 45%,#ffb3e6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+#mpBox #mpIn .mpTop .sub{display:inline-flex;align-items:center;gap:8px;margin:0;padding:6px 14px;border-radius:999px;opacity:1;font:700 11.5px Roboto,sans-serif;letter-spacing:.4px;color:#cfe9ff;
+  background:rgba(127,231,255,.09);border:1px solid rgba(127,231,255,.22)}
+#mpBox #mpIn .mpTop .sub::before{content:'';width:7px;height:7px;border-radius:50%;background:#2ee56a;box-shadow:0 0 8px #2ee56a}
+/* ALT OK: Listeyi yenile */
+#mpBox #mpIn #mpRef{min-height:48px;padding:0 18px 0 8px;gap:12px;border-radius:999px;justify-content:center;font:800 12px Roboto,sans-serif;letter-spacing:2px;color:#e8f6ff;
+  background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));border:1px solid rgba(127,231,255,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 6px 16px rgba(0,0,0,.28);text-shadow:none}
+#mpBox #mpIn #mpRef i{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;flex:none;
+  background:linear-gradient(135deg,#2ab3ff,#7a2cff);box-shadow:0 3px 10px rgba(80,120,255,.5),inset 0 1px 0 rgba(255,255,255,.4);transition:transform .35s cubic-bezier(.3,.7,.4,1)}
+#mpBox #mpIn #mpRef i svg{width:17px;height:17px;display:block;fill:none;stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+#mpBox #mpIn #mpRef:hover{border-color:rgba(127,231,255,.6);filter:none;transform:translateY(-1px)}
+#mpBox #mpIn #mpRef:hover i{transform:rotate(180deg)}
+#mpBox #mpIn #mpRef.spin i{animation:mpSp .7s linear infinite}
+/* arama kutusu panelden taşıyordu */
+#mpBox #mpIn .mpSearchBox{max-width:100%}#mpBox #mpIn .mpSearchBox input{box-sizing:border-box;max-width:100%}
+/* ===== ODA ADI alanı ===== */
+#mpBox #mpIn .mpRnBox{padding:14px 14px 12px;border-radius:20px;text-align:left}
+#mpBox #mpIn .mpRnBox label{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 2px 10px;font:800 11px Roboto,sans-serif;letter-spacing:1.6px;text-transform:uppercase;color:#9fe9ff;opacity:1}
+#mpBox #mpIn .mpRnBox label small{margin:0;font:600 10.5px Roboto,sans-serif;letter-spacing:.2px;text-transform:none;color:rgba(255,255,255,.5);opacity:1}
+#mpBox #mpIn .mpRnBox .mpRnRow{position:relative;display:block}
+#mpBox #mpIn .mpRnBox #mpRoomName{box-sizing:border-box;width:100%;height:50px;padding:0 58px 0 16px;border-radius:14px;border:1.5px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#fff;font:600 15.5px Roboto,sans-serif;letter-spacing:.2px;outline:0;transition:border-color .15s,background .15s}
+#mpBox #mpIn .mpRnBox #mpRoomName::placeholder{color:rgba(255,255,255,.32);font-weight:500}
+#mpBox #mpIn .mpRnBox #mpRoomName:focus{border-color:#7fe7ff;background:rgba(0,0,0,.45);box-shadow:none}
+#mpBox #mpIn .mpRnBox .mpRnCnt{position:absolute;right:14px;top:50%;transform:translateY(-50%);min-width:0;padding:0;background:none;opacity:1;font:700 11px Roboto,sans-serif;letter-spacing:.3px;color:rgba(255,255,255,.4);text-align:right;pointer-events:none}
+#mpBox #mpIn .mpRnBox .mpChips{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+#mpBox #mpIn .mpRnBox .mpChip{padding:9px 8px;border-radius:12px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:700 12px Roboto,sans-serif;letter-spacing:.2px;color:#d6efff;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.13)}
+#mpBox #mpIn .mpRnBox .mpChip:hover{background:rgba(127,231,255,.16);border-color:rgba(127,231,255,.4)}
+/* ===== Oda içi başlık: ODA ADI + oda ismi (renk geçişli yazı gölgesi çift kontur gibi görünüyordu) ===== */
+#mpBox #mpIn .mpTop h3.mpRh{display:flex;flex-direction:column;align-items:center;gap:7px;margin:0 0 10px;font:800 22px/1.25 Roboto,sans-serif;letter-spacing:.6px;overflow-wrap:anywhere;word-break:break-word;
+  background:none!important;color:#fff;-webkit-text-fill-color:#fff;text-shadow:0 2px 14px rgba(122,44,255,.55)}
+#mpBox #mpIn .mpTop h3.mpRh .mpLb{display:inline-block;margin:0;padding:4px 12px;border-radius:999px;font:800 10.5px Roboto,sans-serif;letter-spacing:2px;color:#9fe9ff;-webkit-text-fill-color:#9fe9ff;text-shadow:none;
+  background:rgba(127,231,255,.1);border:1px solid rgba(127,231,255,.28)}
+/* ===== Ana menü butonları + altın / bilet kutuları: hizalama cilası ===== */
+#menu #startBtn,#menu #mpMenuBtn,#menu #characterSelectBtn{display:flex!important;align-items:center!important;justify-content:center!important;gap:12px!important;white-space:nowrap!important;line-height:1!important;text-align:center!important}
+#menu #startBtn{font:900 clamp(18px,5.2vw,25px)/1 Roboto,sans-serif!important;letter-spacing:3px!important}
+#menu #mpMenuBtn,#menu #characterSelectBtn{font:800 clamp(15px,4.4vw,19px)/1 Roboto,sans-serif!important;letter-spacing:3px!important}
+#menu #startBtn>span,#menu #mpMenuBtn>span:last-child,#menu #characterSelectBtn>span:last-child{display:block;margin-right:-3px;line-height:1}
+#menu #mpMenuBtn .bi,#menu #characterSelectBtn .bi{display:grid!important;place-items:center;flex:none;width:36px;height:36px;margin:0!important;padding:0;font-size:18px!important;line-height:1!important;vertical-align:baseline!important;border-radius:12px;background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.24)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.2)!important}
+#menu #characterSelectBtn .bi{background:linear-gradient(135deg,#4d8bff,#7a2cff)!important;border-color:rgba(255,255,255,.3)!important}
+/* altın + sandık bileti: aynı iskelet (ikon solda, etiket + değer ortalı blokta) */
+#goldDisplay,#ticketDisplay{box-sizing:border-box!important;grid-template-columns:auto 1fr!important;grid-template-rows:1fr 1fr!important;column-gap:12px!important;row-gap:3px!important;align-items:center!important;justify-content:stretch!important;text-align:left!important;width:184px;min-width:184px!important;height:58px!important;padding:0 18px 0 8px!important}
+#goldDisplay img,#ticketDisplay .tdIcon{grid-column:1!important;grid-row:1 / span 2!important;align-self:center;justify-self:center;width:42px!important;height:42px!important;margin:0;transform:none!important;box-sizing:border-box}
+#ticketDisplay .tdIcon{display:grid!important;place-items:center;font-size:21px!important;line-height:1}
+#goldDisplay .gdLabel,#ticketDisplay .tdLabel{grid-column:2!important;grid-row:1!important;align-self:end!important;justify-self:start;margin:0;font:800 10px/1 Roboto,sans-serif!important;letter-spacing:2.6px!important;text-align:left}
+#goldDisplay .gdVal,#ticketDisplay .tdVal{grid-column:2!important;grid-row:2!important;align-self:start!important;justify-self:start;margin:0;min-width:0!important;font:900 25px/1 Roboto,sans-serif!important;font-variant-numeric:tabular-nums;letter-spacing:.4px!important;text-align:left!important}
+/* parlama animasyonu: left yerine transform (daha az işlemci) */
+#goldDisplay::after,#ticketDisplay::after{left:-60%!important;animation:pillShine 4.4s ease-in-out infinite!important}
+@keyframes pillShine{0%{transform:translateX(0) skewX(-20deg)}45%,100%{transform:translateX(530%) skewX(-20deg)}}
+#ticketDisplay{top:90px!important}
+@media (max-width:768px){
+ #goldDisplay,#ticketDisplay{width:158px;min-width:158px!important;height:48px!important;column-gap:9px!important;padding:0 12px 0 6px!important}
+ #goldDisplay img,#ticketDisplay .tdIcon{width:34px!important;height:34px!important}
+ #ticketDisplay .tdIcon{font-size:17px!important}
+ #goldDisplay .gdLabel,#ticketDisplay .tdLabel{font-size:8.5px!important;letter-spacing:2px!important}
+ #goldDisplay .gdVal,#ticketDisplay .tdVal{font-size:20px!important}
+ #ticketDisplay{top:64px!important}
+}
+/* altın + bilet: yazılar ikonun yanındaki alanın tam ortasında, iki kutu aynı genişlikte */
+#goldDisplay,#ticketDisplay{width:204px!important;min-width:204px!important;padding:0 14px 0 8px!important}
+#goldDisplay .gdLabel,#ticketDisplay .tdLabel,#goldDisplay .gdVal,#ticketDisplay .tdVal{justify-self:stretch!important;text-align:center!important;white-space:nowrap!important}
+#goldDisplay .gdLabel,#ticketDisplay .tdLabel{font:800 9.5px/1 Roboto,sans-serif!important;letter-spacing:2px!important;padding:0 0 0 2px!important}
+#goldDisplay .gdVal,#ticketDisplay .tdVal{padding:0!important}
+@media (max-width:768px){
+ #goldDisplay,#ticketDisplay{width:174px!important;min-width:174px!important;padding:0 10px 0 6px!important}
+ #goldDisplay .gdLabel,#ticketDisplay .tdLabel{font-size:8px!important;letter-spacing:1.6px!important;padding-left:1.6px!important}
+}
+/* telefonda bilet kutusu mağaza panelinin altında kalıyordu: altının soluna, aynı satıra al */
+@media (max-width:768px){html body #ticketDisplay{top:10px!important;right:194px!important}html body.portrait #ticketDisplay{top:10px!important;right:152px!important}}
+/* ===== altın / bilet yazıları: dikeyde ve yatayda tam ortalı, daha şık ===== */
+#goldDisplay,#ticketDisplay{grid-template-rows:1fr auto auto 1fr!important;row-gap:0!important}
+#goldDisplay img,#ticketDisplay .tdIcon{grid-row:1 / span 4!important}
+#goldDisplay .gdLabel,#ticketDisplay .tdLabel{grid-row:2!important;align-self:center!important;margin:0 0 4px!important;font:800 9.5px/1 Roboto,sans-serif!important;letter-spacing:2.6px!important;padding:0 0 0 2.6px!important;text-transform:uppercase;text-shadow:none!important;opacity:.95}
+#goldDisplay .gdVal,#ticketDisplay .tdVal{grid-row:3!important;align-self:center!important;margin:0!important;font:900 26px/1 Roboto,sans-serif!important;letter-spacing:.8px!important;padding:0 0 0 .8px!important;font-variant-numeric:tabular-nums lining-nums}
+#goldDisplay .gdLabel{color:#ffd978!important}
+#goldDisplay .gdVal{background:linear-gradient(180deg,#fffbe0 0%,#ffe27a 45%,#ffb300 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent!important;color:transparent!important;filter:drop-shadow(0 2px 6px rgba(255,170,0,.35))}
+#ticketDisplay .tdLabel{color:#f3b8ff!important}
+#ticketDisplay .tdVal{background:linear-gradient(180deg,#ffffff 0%,#f0c6ff 50%,#d17bff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent!important;color:transparent!important;filter:drop-shadow(0 2px 6px rgba(200,100,255,.35))}
+@media (max-width:768px){
+ #goldDisplay .gdLabel,#ticketDisplay .tdLabel{font-size:8px!important;letter-spacing:2px!important;padding-left:2px!important;margin-bottom:3px!important}
+ #goldDisplay .gdVal,#ticketDisplay .tdVal{font-size:21px!important}
+}
+@media (prefers-reduced-motion:reduce){#mpBox #mpIn #mpRef i,#mpBox #mpIn #mpRef.spin i{animation:none;transition:none}}
 </style>
 </head>
 <body>
@@ -3202,7 +3296,7 @@ html body #mpEvBadge { background: rgba(10,12,30,.82) !important; }
             </div>
             <div id="nameHint">Harf ve rakam kullanabilirsin (en fazla 12)</div>
         </div>
-        <button id="startBtn">👤 TEK OYUNCULU</button>
+        <button id="startBtn"><span>TEK OYUNCULU</span></button>
         <button id="mpMenuBtn"><span class="bi">👥</span><span>ÇOK OYUNCULU</span></button>
         <button id="characterSelectBtn"><span class="bi">🎒</span><span>ENVANTER</span></button>
     </div>
@@ -3864,9 +3958,13 @@ let milestoneGoldRainDone = false;
 let _nextGoldRainScore = 18 + Math.floor(Math.random() * 27);   // altın yağmuru: rastgele skorlarda
 let milestoneGravityDone = false;    // Rastgele skor
 let milestoneBossDone = false;       // Skor 50
+let _lastLoopBossScore = 0;          // Skor 2100+ her 100'de tekrar eden boss: aynı skorda iki kez çıkmasın
 let _randomGravityScore = 30;
 let _nextRepeatGravityScore = 100;
 let _gravPending = false; // Her oyun başında random belirlenir
+let _goldRainUntil = 0;              // altın yağmuru sürerken (oyun saati, ms) başka hiçbir olay başlamaz
+const GOLD_RAIN_MS = 5000;           // yağmurun görsel süresi
+const _goldRainBusy = () => gameClock < _goldRainUntil;
 
 // =============================================
 // COMBO SİSTEMİ DEĞİŞKENLERİ
@@ -4219,6 +4317,16 @@ function playScheduledVideo(entry) {
         if (activeRandomVideo !== videoEl || _tok !== _vidToken) return;
         if (!videoEl.paused && videoEl.readyState >= 3 && videoEl.currentTime > 0.05) return;
         const _broken = !!videoEl.error || videoEl.networkState === 3; // 3 = NETWORK_NO_SOURCE
+        if (_broken && n >= 2 && !entry._retried) {
+            // Dosya yok / açılamıyor: bu skoru boş geçme, çalışan başka bir videoyu oynat
+            entry.videoDef.broken = true;
+            const alt = ALL_VIDEO_DEFS.filter(d => !d.broken && d.id !== BAN_VIDEO_ID && d.id !== entry.videoDef.id);
+            if (alt.length) {
+                videoEl.pause(); videoEl.style.display = 'none'; videoEl.onended = null;
+                playScheduledVideo({ score: entry.score, videoDef: alt[Math.floor(Math.random() * alt.length)], played: true, _retried: true });
+                return;
+            }
+        }
         if (n >= 25 || (_broken && n >= 2)) {
             videoEl.pause(); videoEl.style.display = 'none'; videoEl.onended = null;
             activeRandomVideo = null; nightMode = true; jumpSoundAllowed = true;
@@ -4802,44 +4910,81 @@ let notificationQueue = [];
 let notificationDisplaying = false;
 
 function showNotification(msg, color='#ffd700') {
-    notificationQueue.push({ msg, color });
-    if (!notificationDisplaying) {
-        processNotificationQueue();
-    }
+    _gnShow(msg, color);
 }
+function processNotificationQueue() { notificationDisplaying = false; }   // eski kuyruk sistemi: artık bildirimler üst üste yığılarak gösteriliyor
 
-function processNotificationQueue() {
-    if (notificationQueue.length === 0) {
-        notificationDisplaying = false;
-        return;
+// Şık bildirim kartı: ikon kutusu + başlık + ödül rozetleri + akan süre çubuğu
+function _gnParse(raw) {
+    let text = String(raw).trim(), icon = '🔔', kicker = '', sub = '', mm;
+    if ((mm = text.match(/^(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*/u))) { icon = mm[1]; text = text.slice(mm[0].length); }
+    const chips = [];
+    text = text.replace(/\+\s?(\d[\d.,]*)\s*(Altın|Sandık Bileti|Bilet|XP|💰|🎫|✨)/g, (all, n, u) => {
+        const k = /Altın|💰/.test(u) ? ['💰', 'ALTIN'] : /XP|✨/.test(u) ? ['✨', 'XP'] : ['🎫', 'BİLET'];
+        chips.push({ ic: k[0], n: '+' + n, lb: k[1] }); return '';
+    });
+    text = text.replace(/\s{2,}/g, ' ').trim();
+    let title = text;
+    if ((mm = text.match(/^Görev:\s*["“](.+?)["”]\s*tamamlandı!?\s*(.*)$/))) { kicker = 'GÖREV TAMAMLANDI'; title = mm[1]; sub = mm[2]; }
+    else if ((mm = text.match(/^Başarı:\s*["“](.+?)["”]!?\s*(.*)$/))) { kicker = 'BAŞARI AÇILDI'; title = mm[1]; sub = mm[2]; }
+    else if ((mm = text.match(/^SEVİYE\s*(\d+)!?\s*(.*)$/i))) { kicker = 'SEVİYE ATLADIN'; title = 'Seviye ' + mm[1]; sub = mm[2]; }
+    else if ((mm = text.match(/^(.+?[!.])\s+(.+)$/)) && mm[1].length < 40) { title = mm[1]; sub = mm[2]; }
+    const clean = t => t.replace(/^[\s\-–·:!,.]+|[\s\-–·:,]+$/g, '').replace(/\s*Ödül!?$/i, '').trim();
+    title = clean(title).replace(/!$/, ''); sub = clean(sub);
+    if (!title && sub) { title = sub; sub = ''; }
+    return { icon, kicker, title: title || 'Bildirim', sub, chips };
+}
+function _gnShow(msg, color) {
+    if (!document.getElementById('gnStyles')) {
+        const st = document.createElement('style'); st.id = 'gnStyles';
+        st.textContent = `
+        #gnBox{position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:999;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;width:min(440px,92vw)}
+        .gn{--c:#ffd700;position:relative;display:flex;align-items:center;gap:13px;width:100%;box-sizing:border-box;padding:12px 18px 14px 12px;border-radius:18px;overflow:hidden;color:#fff;font-family:Roboto,'Segoe UI',sans-serif;
+            background:linear-gradient(135deg,rgba(28,22,60,.94),rgba(8,8,26,.96));border:1px solid color-mix(in srgb,var(--c) 55%,transparent);
+            box-shadow:0 14px 36px rgba(0,0,0,.55),0 0 24px color-mix(in srgb,var(--c) 30%,transparent),inset 0 1px 0 rgba(255,255,255,.14);
+            -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);animation:gnIn .5s cubic-bezier(.2,1.2,.3,1) both}
+        .gn.out{animation:gnOut .35s ease forwards}
+        .gn::before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:linear-gradient(180deg,var(--c),color-mix(in srgb,var(--c) 40%,#000))}
+        .gn::after{content:'';position:absolute;top:0;bottom:0;width:60px;left:-80px;background:linear-gradient(100deg,transparent,rgba(255,255,255,.22),transparent);transform:skewX(-18deg);animation:gnShine 1.1s .25s ease-out 1 both}
+        .gn .gIc{flex:none;width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:24px;margin-left:4px;
+            background:radial-gradient(circle at 30% 25%,color-mix(in srgb,var(--c) 45%,#fff 0%),color-mix(in srgb,var(--c) 18%,#000));box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 0 14px color-mix(in srgb,var(--c) 45%,transparent);animation:gnPop .6s .12s cubic-bezier(.2,1.5,.4,1) both}
+        .gn .gTx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+        .gn .gK{font:900 10px/1 Roboto,sans-serif;letter-spacing:2.2px;color:var(--c)}
+        .gn .gT{font:800 15px/1.2 Roboto,sans-serif;letter-spacing:.2px;overflow-wrap:anywhere}
+        .gn .gS{font:600 12px/1.25 Roboto,sans-serif;opacity:.72;overflow-wrap:anywhere}
+        .gn .gCh{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+        .gn .gC{display:inline-flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:999px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);font:900 12px/1 Roboto,sans-serif}
+        .gn .gC small{font:700 8.5px/1 Roboto,sans-serif;letter-spacing:1.2px;opacity:.7}
+        .gn .gBar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.08)}
+        .gn .gBar i{display:block;height:100%;background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 50%,#fff));transform-origin:left;animation:gnBar var(--d,3.4s) linear forwards}
+        @keyframes gnIn{0%{opacity:0;transform:translateY(-26px) scale(.9)}100%{opacity:1;transform:none}}
+        @keyframes gnOut{to{opacity:0;transform:translateY(-14px) scale(.96)}}
+        @keyframes gnPop{0%{transform:scale(0) rotate(-30deg)}100%{transform:scale(1) rotate(0)}}
+        @keyframes gnShine{to{left:120%}}
+        @keyframes gnBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+        @media (max-width:640px),(max-height:430px){#gnBox{top:56px;gap:6px}.gn{padding:9px 14px 11px 8px;gap:10px;border-radius:14px}.gn .gIc{width:38px;height:38px;font-size:20px;border-radius:11px}.gn .gT{font-size:13px}.gn .gS{font-size:11px}}
+        @media (prefers-reduced-motion:reduce){.gn,.gn *,.gn::after{animation-duration:.01s!important}.gn .gBar i{animation:none!important}}`;
+        document.head.appendChild(st);
     }
-    
-    notificationDisplaying = true;
-    const { msg, color } = notificationQueue.shift();
-    
-    const el = document.createElement('div');
-    el.className = 'gameNotif';
-    el.style.cssText = `position:fixed;top:80px;left:50%;transform:translateX(-50%);
-        background:rgba(0,0,0,0.9);color:${color};font-family:'Press Start 2P',cursive;font-size:clamp(10px,1.4vw,14px);
-        padding:12px 24px;border-radius:14px;border:3px solid ${color};z-index:999;
-        text-align:center;font-weight:bold;text-shadow:2px 2px 0 #000;
-        animation:notifFade 2.5s ease forwards;pointer-events:none;max-width:90vw;
-        `;
-    el.textContent = msg;
-    
-    if(!document.getElementById('notifKeyframes')) {
-        const s = document.createElement('style');
-        s.id='notifKeyframes';
-        s.textContent=`@keyframes notifFade{0%{opacity:0;top:60px}15%{opacity:1;top:80px}70%{opacity:1}100%{opacity:0;top:60px}}
-        @keyframes notifCenterFade{0%{opacity:0;transform:translate(-50%,-50%) scale(0.5)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}25%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(0.95)}}`;
-        document.head.appendChild(s);
+    let box = document.getElementById('gnBox');
+    if (!box) { box = document.createElement('div'); box.id = 'gnBox'; document.body.appendChild(box); }
+    const d = _gnParse(msg), dur = d.chips.length || d.sub ? 3800 : 3000;
+    const el = document.createElement('div'); el.className = 'gn gameNotif'; el.style.setProperty('--c', color); el.style.setProperty('--d', dur + 'ms');
+    const ic = document.createElement('div'); ic.className = 'gIc'; ic.textContent = d.icon;
+    const tx = document.createElement('div'); tx.className = 'gTx';
+    if (d.kicker) { const k = document.createElement('div'); k.className = 'gK'; k.textContent = d.kicker; tx.appendChild(k); }
+    const t = document.createElement('div'); t.className = 'gT'; t.textContent = d.title; tx.appendChild(t);
+    if (d.sub) { const sb = document.createElement('div'); sb.className = 'gS'; sb.textContent = d.sub; tx.appendChild(sb); }
+    if (d.chips.length) {
+        const row = document.createElement('div'); row.className = 'gCh';
+        d.chips.forEach(c => { const sp = document.createElement('span'); sp.className = 'gC'; sp.textContent = c.ic + ' ' + c.n + ' '; const sm = document.createElement('small'); sm.textContent = c.lb; sp.appendChild(sm); row.appendChild(sp); });
+        tx.appendChild(row);
     }
-    
-    document.body.appendChild(el);
-    setTimeout(() => {
-        el.remove();
-        processNotificationQueue();
-    }, 2500);
+    const bar = document.createElement('div'); bar.className = 'gBar'; bar.appendChild(document.createElement('i'));
+    el.appendChild(ic); el.appendChild(tx); el.appendChild(bar);
+    box.appendChild(el);
+    while (box.children.length > 3) box.removeChild(box.firstChild);   // ekran dolmasın
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, dur);
 }
 
 // =============================================
@@ -5504,6 +5649,7 @@ function closeAllMenus() {
     characterMenu.style.display = 'none';
     settingsMenu.style.display = 'none';
     gameOverEl.style.display = 'none';
+    goldDisplay.style.display = 'none';   // altın kutusu yalnızca mağazada görünür (mağaza açılırken tekrar 'block' yapılır)
     updateTicketDisplay();
 }
 function startGame() {
@@ -5564,8 +5710,10 @@ function startGame() {
     milestoneGoldRainDone = false;
     _invulnUntil = 0;
     _nextGoldRainScore = 18 + Math.floor(Math.random() * 27);
+    _goldRainUntil = 0;
     milestoneGravityDone = false;
     milestoneBossDone = false;
+    _lastLoopBossScore = 0;
     reverseGravityActive = false;
     reverseGravityTimer = 0;
     bossActive = false;
@@ -5726,8 +5874,10 @@ function restartGame() {
     // Milestone sıfırla
     milestoneGoldRainDone = false;
     _nextGoldRainScore = 18 + Math.floor(Math.random() * 27);
+    _goldRainUntil = 0;
     milestoneGravityDone = false;
     milestoneBossDone = false;
+    _lastLoopBossScore = 0;
     if (reverseGravityActive) { reverseGravityActive = false; bird.gravity = 1.5; bird.flap = -18; }
     _gravPending = false;
     bossActive = false;
@@ -5983,20 +6133,25 @@ function _simStep(dt) {
             // =============================================
             // SKOR MİLESTONE EVENTLERİ
             // =============================================
-            if (score >= _nextGoldRainScore && score !== 50 && !bossActive && !reverseGravityActive) {
+            if (score >= _nextGoldRainScore && score !== 50 && !bossActive && !reverseGravityActive && !_gravPending && !_goldRainBusy() && !(window._spEvNow && window._spEvNow())) {   // başka olay sürerken yağmur çıkmaz; şartlar uygun olunca sonraki boruda gelir
                 _nextGoldRainScore = score + 450 + Math.floor(Math.random() * 350);   // bir kez çıktıktan sonra çok nadir (+450..800 skor sonra)
                 triggerGoldRain();
             }
-            if (score === _randomGravityScore && !milestoneGravityDone) {
+            if (!milestoneGravityDone && _randomGravityScore > 0 && score >= _randomGravityScore && !_goldRainBusy()) {   // yağmur sürerken ters yerçekimi başlamaz, yağmurdan sonra gelir
                 milestoneGravityDone = true;
                 triggerReverseGravity();
             }
-            if (score >= 100 && score >= _nextRepeatGravityScore && !reverseGravityActive && !_gravPending && !bossActive) {
+            if (score >= 100 && score >= _nextRepeatGravityScore && !reverseGravityActive && !_gravPending && !bossActive && !_goldRainBusy()) {
                 _nextRepeatGravityScore = score + 70 + Math.floor(Math.random() * 71);
                 triggerReverseGravity();
             }
-            if (score === 50 && !milestoneBossDone) {
+            if (score >= 50 && !milestoneBossDone && !_goldRainBusy()) {   // yağmur sürerken boss başlamaz, yağmurdan sonra gelir
                 milestoneBossDone = true;
+                triggerBossFight();
+            }
+            // Skor 2000'den sonra: 2100, 2200 ve 2300'de boss tekrar gelir, 2300'den sonra durur (tek oyunculu)
+            if (!MP.on && score > 2000 && score <= 2300 && score % 100 === 0 && score !== _lastLoopBossScore && !bossActive) {
+                _lastLoopBossScore = score;
                 triggerBossFight();
             }
             // =============================================
@@ -6072,7 +6227,7 @@ function _simStep(dt) {
             // =============================================
             for (let wi = 0; wi < randomVideoSchedule.length; wi++) {
                 const we = randomVideoSchedule[wi];
-                if (!MP.on && !we.warmed && !we.played && score >= we.score - 70) {   // çok oyunculuda skora bağlı video yok: herkes aynı anda aynı şeyi görsün
+                if (!MP.on && !we.warmed && !we.played && (score >= we.score - 70 || we.score <= 200)) {   // çok oyunculuda skora bağlı video yok: herkes aynı anda aynı şeyi görsün
                     we.warmed = true;
                     warmVideoEl(document.getElementById(we.videoDef.id));
                 }
@@ -6678,7 +6833,7 @@ playerNameInput.addEventListener('input', () => {
 });
 _syncNameCount();
 document.getElementById('pfX').onclick = () => document.getElementById('profileModal').classList.remove('active');
-document.getElementById('startBtn').onclick = startGame;
+document.getElementById('startBtn').onclick = function () { return startGame.apply(this, arguments); };   // ad üzerinden çağır: sonradan sarmalanan startGame (hava olayları / çok oyunculu) devreye girsin
 document.getElementById('restartBtn').onclick = restartGame;
 lobbyShopBtn.onclick = () => {
     if (shopEl.style.display === 'block') {
@@ -7975,6 +8130,7 @@ document.addEventListener('keydown', e => {
 
 // SKOR 50 - ALTIN YAĞMURU
 function triggerGoldRain() {
+    _goldRainUntil = gameClock + GOLD_RAIN_MS;   // bu süre boyunca hava olayı / boss / ters yerçekimi başlamaz
     try { questEvent('goldrain', 1); } catch (e) {}
     // +25 altın ver
     gold += 25;
@@ -7997,13 +8153,15 @@ function spawnGoldRainParticles() {
             8%   { opacity: 1; }
             100% { transform: translate3d(var(--sw),112vh,0) rotate(var(--rot)); opacity: .9; }
         }
-        .goldRainP { position: fixed; top: 0; z-index: 50; pointer-events: none; will-change: transform; ${IS_MOBILE ? '' : 'filter: drop-shadow(0 0 6px rgba(255,200,0,.85));'} }`;
+        .goldRainP { position: fixed; top: 0; z-index: 50; pointer-events: none; will-change: transform; text-shadow: 0 0 6px rgba(255,200,0,.85); }`;
         document.head.appendChild(s);
     }
     const icons = ['💰', '🪙', '🪙', '🪙', '✨', '💰'];
-    const total = IS_MOBILE ? 48 : 90;
+    const total = IS_MOBILE ? 40 : 60;
+    const _myRun = _runStartMs;
     for (let i = 0; i < total; i++) {
         setTimeout(() => {
+            if (_runStartMs !== _myRun || gameState === 'menu') return;   // oyun bitti / yeniden başladıysa yağmur parçacığı üretme
             const p = document.createElement('div');
             const dur = 1.3 + Math.random() * 1.2;
             p.className = 'goldRainP';
@@ -9997,6 +10155,8 @@ function _mpWide(on) {
 #mpEvHud .eb{height:10px;margin-top:8px;border-radius:6px;background:#001133;overflow:hidden;border:1px solid rgba(255,255,255,.2)}
 #mpEvHud .eb i{display:block;height:100%;width:100%;background:var(--c,#00ccff);transition:width .25s linear}
 #mpEvHud .et{margin-top:4px;font:700 12px Roboto,sans-serif;color:#cfe8ff}
+body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) + 84px)}   /* ters yerçekimi çubuğu açıkken hava olayı çubuğu onun altına insin */
+@media (max-height:480px){body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(52px + 62px)}}
 @media (max-height:480px){#mpEvHud{top:52px;min-width:200px;padding:6px 14px 6px;font-size:11px}#mpEvHud .eb{margin-top:5px;height:8px}#mpEvHud .et{font-size:11px;margin-top:2px}}
 `;
     document.head.appendChild(cssX);
@@ -10192,7 +10352,7 @@ function _mpWide(on) {
             + '<div id="mpBackBox"></div><div id="mpErr"></div><button class="btn sec" id="mpClose">KAPAT</button></div>'
             + '<div class="mpCol"><div class="mpPh"><b>AÇIK ODALAR</b><span>🔓 herkes girebilir · 🔒 yalnızca kodla</span></div>'
             + '<div class="mpSearchBox"><span class="mpSi">🔎</span><input id="mpSearch" autocomplete="off" placeholder="Oda adıyla ara…"></div>'
-            + '<div id="mpPubList" class="sub">Yükleniyor…</div><button class="mpRef" id="mpRef"><i>↻</i><span>LİSTEYİ YENİLE</span></button></div></div>';
+            + '<div id="mpPubList" class="sub">Yükleniyor…</div><button class="mpRef" id="mpRef"><i><svg viewBox=\"0 0 24 24\"><path d=\"M20 11a8 8 0 1 0-2.3 5.7\"/><path d=\"M20 4v7h-7\"/></svg></i><span>LİSTEYİ YENİLE</span></button></div></div>';
         $('mpName').oninput = e => { const c = e.target.value.replace(/[^a-zA-Z0-9çÇğĞıİöÖşŞüÜ]/g, ''); if (c !== e.target.value) e.target.value = c; };
         $('mpSearch').oninput = () => renderPub();
         $('mpSearch').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); renderPub(); if (!_pubBusy) loadPub(); } };
@@ -10216,7 +10376,7 @@ function _mpWide(on) {
         _waitUI = false; clearInterval(_pubT);
         inn.innerHTML = '<div class="mpTop"><div class="mpEmb">🏠</div><h3>ODANI KUR</h3><div class="sub">Odana bir ad ver, sonra kimlerin girebileceğini seç</div></div>'
             + '<div class="mpRnBox"><label>Oda adı <small>en az 1, en çok 30 karakter</small></label><div class="mpRnRow"><input id="mpRoomName" maxlength="30" autocomplete="off" placeholder="Örn: Kuşçular Kampı"><span class="mpRnCnt" id="mpRnCnt">0/30</span></div><div class="mpChips">' + ['Kuşçular Kampı', 'Boru Avcıları', 'Gökyüzü Ligi', 'Uçan Dostlar'].map(s => '<button type="button" class="mpChip">' + s + '</button>').join('') + '</div></div>'
-            + swHtml('mpPubSw', false) + '<div id="mpErr"></div><button class="btn wait" id="mpMk" disabled>🏠 ODAYI KUR</button><button class="btn sec" id="mpMkBack">← GERİ</button>';
+            + swHtml('mpPubSw', false) + '<div id="mpErr"></div><button class="btn wait" id="mpMk" disabled><span class="pcOK">🏠</span> ODAYI KUR</button><button class="btn sec" id="mpMkBack">← GERİ</button>';
         const inp = $('mpRoomName'), mk = $('mpMk'); let pubSel = false;
         const psw = $('mpPubSw'); psw.onclick = () => { pubSel = !pubSel; swUpd(psw, pubSel); };
         const upd = () => { const c = inp.value.replace(/[<>&]/g, ''); if (c !== inp.value) inp.value = c; $('mpRnCnt').textContent = inp.value.length + '/30'; const ok = inp.value.trim().length >= 1; mk.disabled = !ok; mk.classList.toggle('wait', !ok); err(''); };
@@ -10632,7 +10792,13 @@ function _mpWide(on) {
             for (const id in MP.others) if (!MP.others[id].dying && !r.players.some(p => p.id === id && p.alive)) delete MP.others[id];   // çıkan oyuncu haritadan kalkar (ölen kuş düşme animasyonunu bitirir)
         });
         sk.on('gone', d => {   // ölüm bildirimi: kuş birden kaybolmaz, tamponlanmış son konumdan itibaren düşmeye devam eder
-            { const o0 = MP.others[d.id]; if (o0 && o0.buf && o0.buf.length && MP.go) { o0.dying = true; o0.dst = o0.buf[o0.buf.length - 1].st; } else delete MP.others[d.id]; }
+            { const o0 = MP.others[d.id];
+              if (o0 && o0.buf && o0.buf.length && MP.go) {
+                  const b0 = o0.buf, l0 = b0[b0.length - 1];
+                  // Sunucu ölüm adımını + son konumu da gönderir: tamponda yoksa eklenir → düşüş ölenle AYNI oyun adımında, aynı yerden başlar
+                  if (typeof d.st === 'number' && typeof d.y === 'number' && d.st > l0.st && d.st - l0.st < 120) b0.push({ st: d.st, y: d.y, vy: (d.vy | 0) / 10 });
+                  o0.dying = true; o0.dst = b0[b0.length - 1].st; o0.t = performance.now();
+              } else delete MP.others[d.id]; }
             if (MP.room) {
                 const q = MP.room.players.find(p => p.id === d.id);
                 if (q) {
@@ -10682,7 +10848,7 @@ function _mpWide(on) {
         sk.on('s', a => { if (a[0] !== sk.id) sample(a[0], a[1], a[2] / 10, a[3]); });   // eski sunucu uyumu
         sk.on('start', d => {
             _kickAsk = null; kickModal();
-            box.classList.remove('on'); MP.res = null; MP.on = true; MP.rd = true; MP.go = false; MP.others = {}; MP.fx = {}; MP.pend = {}; MP.claimed = {}; MP.mine = {}; MP.seed = d.seed >>> 0; MP.pi = 0; MP.steps = 0; MP.jc = 0; MP.prevTop = undefined; MP.gravT0 = undefined; MP.bossSt = undefined; MP.bossFired = false; MP.startAt = (typeof d.startAt === 'number' && isFinite(d.startAt)) ? d.startAt : 0; MP.slots = d.slots || {}; MP.lx = Array.isArray(d.lx) ? d.lx : []; MP.n = d.n || 1; MP.slotId = {}; for (const k in MP.slots) MP.slotId[MP.slots[k]] = k;
+            box.classList.remove('on'); MP.res = null; MP.on = true; MP.rd = true; MP.go = false; MP.others = {}; MP.fx = {}; MP.pend = {}; MP.claimed = {}; MP.mine = {}; MP.seed = d.seed >>> 0; MP.pi = 0; MP.steps = 0; MP.jc = 0; MP.txq = []; MP.prevTop = undefined; MP.gravT0 = undefined; MP.bossSt = undefined; MP.bossFired = false; MP.startAt = (typeof d.startAt === 'number' && isFinite(d.startAt)) ? d.startAt : 0; MP.slots = d.slots || {}; MP.lx = Array.isArray(d.lx) ? d.lx : []; MP.n = d.n || 1; MP.slotId = {}; for (const k in MP.slots) MP.slotId[MP.slots[k]] = k;
             MP.gr = _mpRng((MP.seed ^ 0xabcdef) >>> 0); MP.gravAt = 16 + (MP.gr() * 14 | 0);   // ters yerçekimi: herkeste aynı boru sırasında
             gameOverEl.style.display = 'none';
             _mpWide(true);
@@ -10690,7 +10856,7 @@ function _mpWide(on) {
             MP.opts = d.opts || {};
             const _gf = { easy: 0.50, normal: 0.36, hard: 0.24 }[MP.opts.gap] || 0.36, _eg = Math.round(designHeight * _gf), _sm = { slow: 0.7, normal: 1, fast: 1.7 }[MP.opts.speed] || 1;   // geçit: oyuncu sayısından bağımsız sabit (tek oyunculu ~400); hız: belirgin fark
             MP.sm = _sm; currentGap = _eg + 200; pipeInterval = Math.max(20, Math.round(pipeInterval / _sm));   // hız artınca boru sıklığı da artar: boru arası mesafe aynı kalır
-            MP.evs = (MP.opts.ev === false ? [] : (Array.isArray(d.events) ? d.events.filter(e => e && e.type !== 'quake' && _EVI[e.type]) : [])).map(e => { const lead = e.type === 'grav' ? 180 : 120; return { type: e.type, st: e.t / STEP_MS, lead: lead, end: (e.t + e.d) / STEP_MS, dir: e.dir < 0 ? -1 : 1 }; }).sort((a, b) => a.st - b.st); MP.evi = 0;
+            MP.evs = (MP.opts.ev === false ? [] : (Array.isArray(d.events) ? d.events.filter(e => e && _EVI[e.type]) : [])).map(e => { const lead = e.type === 'grav' ? 180 : 120; return { type: e.type, st: e.t / STEP_MS, lead: lead, end: (e.t + e.d) / STEP_MS, dir: e.dir < 0 ? -1 : 1 }; }).sort((a, b) => a.st - b.st); MP.evi = 0;
             startGame();
             if (gameState !== 'ready') { MP.on = false; _mpWide(false); sk.emit('dead', 0); return; }
             bird.x = _mpLaneX(MP.slots[sk.id]); bird.y = _mpLaneY(MP.slots[sk.id]);
@@ -10855,19 +11021,33 @@ function _mpWide(on) {
     document.addEventListener('visibilitychange', () => { if (MP.sock && MP.sock.connected) MP.sock.emit('vis', !document.hidden); });
     $('mpMenuBtn').onclick = () => { MP.room ? room(MP.room) : lobby(); box.classList.add('on'); };
     const rb0 = $('restartBtn');
-    const lb = document.createElement('button'); lb.id = 'mpLeaveBtn'; lb.textContent = '🚪 ODADAN AYRIL';
+    const lb = document.createElement('button'); lb.id = 'mpLeaveBtn'; lb.innerHTML = '<span class="dbIc">🚪</span><span class="dbTx"><b>ODADAN AYRIL</b><small>Odayı terk et</small></span>';
     lb.className = 'mpDB red'; lb.style.display = 'none';
     const wt = document.createElement('div'); wt.id = 'mpWait'; wt.style.cssText = 'display:none;margin:0 0 12px;text-shadow:0 2px 6px #000;font:800 13px Roboto,sans-serif;letter-spacing:1px;color:#ffe27a;text-align:center';
     const st0 = document.createElement('style');
     st0.textContent = 'body.mpDead #gameOver, body.mpDead #goBackdrop { display: none !important; }'
-        + '#mpDeadBar { position: fixed; left: 50%; bottom: 9vh; transform: translateX(-50%); z-index: 250; width: min(480px, 90vw); text-align: center; display: none; }';
+        + '#mpDeadBar { position: fixed; left: 50%; bottom: 6vh; transform: translateX(-50%); z-index: 250; width: min(540px, 92vw); text-align: center; display: none; padding: 16px 16px 14px; border-radius: 26px; background: linear-gradient(160deg, rgba(30,22,66,.88), rgba(8,8,26,.92)); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 24px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(143,107,255,.18), inset 0 1px 0 rgba(255,255,255,.14); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-sizing: border-box; }'
+        + '#mpDeadBar::before { content: ""; position: absolute; top: 0; left: 20%; right: 20%; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, #8f6bff, #00d0ff, transparent); }'
+        + '#mpDeadBar #mpWait { display: none; margin: 0 0 12px !important; padding: 8px 14px; border-radius: 999px; background: rgba(255,226,122,.09); border: 1px solid rgba(255,226,122,.28); text-shadow: none !important; font: 700 12.5px/1.3 Roboto, sans-serif !important; letter-spacing: .6px !important; }'
+        + '#mpDeadBar .mpDRow { display: flex; flex-wrap: wrap; gap: 10px; }'
+        + '#mpDeadBar .mpDB { flex: 1 1 190px; width: auto; max-width: none; margin: 0; min-height: 58px; padding: 9px 16px 9px 10px; justify-content: flex-start; gap: 12px; text-align: left; border-radius: 18px; letter-spacing: 1.2px; font-weight: 900; }'
+        + '#mpDeadBar .mpDB:not([style*="none"]) { display: flex !important; }'
+        + '#mpDeadBar #mpWatchBtn { width: 100%; flex: none; margin: 0 0 10px; justify-content: center; min-height: 50px; padding: 10px 16px; text-align: center; box-shadow: 0 8px 22px rgba(255,170,0,.32), inset 0 -3px 0 rgba(120,60,0,.28); }'
+        + '#mpDeadBar .mpDB .dbIc { flex: none; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-size: 19px; background: rgba(0,0,0,.26); box-shadow: inset 0 1px 0 rgba(255,255,255,.22); transition: transform .2s; }'
+        + '#mpDeadBar .mpDB:hover .dbIc { transform: scale(1.1) rotate(-6deg); }'
+        + '#mpDeadBar .mpDB .dbTx { display: flex; flex-direction: column; gap: 3px; min-width: 0; }'
+        + '#mpDeadBar .mpDB .dbTx b { font: 900 13.5px/1 Roboto, sans-serif; letter-spacing: 1.4px; white-space: nowrap; }'
+        + '#mpDeadBar .mpDB .dbTx small { font: 600 10.5px/1.1 Roboto, sans-serif; letter-spacing: .3px; opacity: .78; white-space: nowrap; }'
+        + '#mpDeadBar .mpDB.blue { background: linear-gradient(135deg, rgba(0,180,255,.95), rgba(122,44,255,.95)); box-shadow: 0 10px 24px rgba(88,80,255,.42), inset 0 -3px 0 rgba(20,0,90,.32); }'
+        + '#mpDeadBar .mpDB.red { background: linear-gradient(135deg, rgba(255,77,99,.96), rgba(176,0,42,.96)); box-shadow: 0 10px 24px rgba(255,45,85,.38), inset 0 -3px 0 rgba(80,0,15,.34); }'
+        + '@media (max-width: 480px), (max-height: 430px) { #mpDeadBar { bottom: 3vh; padding: 10px 10px 9px; border-radius: 20px; } #mpDeadBar .mpDB { flex-basis: 140px; min-height: 48px; padding: 6px 10px 6px 7px; gap: 8px; } #mpDeadBar .mpDB .dbIc { width: 32px; height: 32px; font-size: 16px; } #mpDeadBar .mpDB .dbTx b { font-size: 11.5px; letter-spacing: .8px; } #mpDeadBar .mpDB .dbTx small { display: none; } #mpDeadBar #mpWatchBtn { min-height: 42px; } #mpDeadBar #mpWait { margin-bottom: 8px !important; padding: 6px 10px; font-size: 11px !important; } }';
     document.head.appendChild(st0);
     const wb = document.createElement('button'); wb.id = 'mpWatchBtn'; wb.textContent = '👁 OYUNU İZLE';
     wb.className = 'mpDB amber'; wb.style.display = 'none';
     const bar = document.createElement('div'); bar.id = 'mpDeadBar'; bar.appendChild(wt); bar.appendChild(wb); bar.appendChild(lb); document.body.appendChild(bar);
-    const mb = document.createElement('button'); mb.id = 'mpMenuRet'; mb.textContent = '🏠 MENÜYE DÖN';
+    const mb = document.createElement('button'); mb.id = 'mpMenuRet'; mb.innerHTML = '<span class="dbIc">🏠</span><span class="dbTx"><b>MENÜYE DÖN</b><small>Oda açık kalır</small></span>';
     mb.className = 'mpDB blue'; mb.style.display = 'none';
-    bar.insertBefore(mb, lb);
+    const dRow = document.createElement('div'); dRow.className = 'mpDRow'; dRow.appendChild(mb); dRow.appendChild(lb); bar.appendChild(dRow);   // iki buton yan yana
     // Menüye dön: odadan AYRILMAZ; oda ekranı "ÇOK OYUNCULU" butonundan tekrar açılır
     mb.onclick = () => { const rs = MP.res; MP.lock = false; MP.res = null; MP.spec = null; try { restartGame(); } finally { MP.res = rs; } };
     lb.onclick = leaveRoom;
@@ -10893,6 +11073,7 @@ function _mpWide(on) {
         if (!(MP.spec && gameState === 'gameOver' && MP.on)) {
             if (_evOn() && gameState === 'playing') { MP.steps = (MP.steps | 0) + 1; _mpEvTick(); _mpWindApply(arguments[0]); }
             const rr = _updSpec.apply(this, arguments);
+            if (MP.on && gameState === 'playing' && window._mpRec) window._mpRec();   // adım sonrası konum örneği (adım numarasıyla) gönderim kuyruğuna
             if (MP.on && MP.gravT0 !== undefined && gameState === 'playing' && gameClock - MP.gravT0 >= 3000) {   // 3 sn oyun saati sonra herkeste aynı adımda
                 MP.gravT0 = undefined; _gravPending = false;
                 reverseGravityActive = true; _reverseGravityStartTime = gameClock;
@@ -10963,11 +11144,27 @@ function _mpWide(on) {
               if (evh._p !== pct) { evh._p = pct; _evB.style.width = pct + '%'; }
           } }
     }, 50);
-    // Konum gönderimi: 30 Hz (eskiden 20 Hz) ve diğer işlerden bağımsız zamanlayıcıda
-    window._mpSendPos = () => {
-        if (MP.on && MP.sock && MP.sock.connected && (gameState === 'playing' || (gameState === 'ready' && MP.slots))) MP.sock.volatile.emit('s', [Math.round(bird.y * 10) / 10, Math.round(bird.vy * 10), score, MP.steps | 0, MP.jc | 0]);
+    // Konum gönderimi: HER oyun adımı için bir örnek kaydedilir (adım numarasıyla); örnekler ~30 Hz'lik toplu pakette gider.
+    // Paket sayısı yarıya iner (ağ/sunucu yükü ↓, gecikme dalgalanması ↓), örnek sayısı aynı kalır → alıcıda hareket 60 Hz'lik doğrulukta akıcı çizilir.
+    window._mpRec = () => {
+        const q = MP.txq || (MP.txq = []), st = MP.steps | 0;
+        if (q.length && st <= q[q.length - 1][3]) return;
+        q.push([Math.round(bird.y * 10) / 10, Math.round(bird.vy * 10), score, st, MP.jc | 0]);
+        if (q.length > 24) q.shift();
     };
-    setInterval(window._mpSendPos, 16);   // 60 Hz
+    window._mpFlush = () => {   // bekleyen örnekleri gönder (durum fark etmez: ölüm anında da çağrılır)
+        const q = MP.txq; if (!q || !q.length || !MP.sock || !MP.sock.connected) return;
+        const flat = []; for (let i = 0; i < q.length; i++) { const e = q[i]; flat.push(e[0], e[1], e[2], e[3], e[4]); }
+        q.length = 0;
+        MP.sock.volatile.emit('b', flat);
+    };
+    window._mpSendPos = () => {
+        if (!(MP.on && MP.sock && MP.sock.connected)) return;
+        if (MP.ver >= 9 && gameState === 'playing') { window._mpFlush(); return; }
+        // geri sayım sırasındaki nabız + eski sunucu uyumu: tek örnekli paket
+        if (gameState === 'playing' || (gameState === 'ready' && MP.slots)) MP.sock.volatile.emit('s', [Math.round(bird.y * 10) / 10, Math.round(bird.vy * 10), score, MP.steps | 0, MP.jc | 0]);
+    };
+    setInterval(window._mpSendPos, 33);   // ~30 Hz (her pakette ~2 oyun adımı)
     // Sekme arka plandayken tarayıcı çizimi durdurur: oyunu zamanla ilerlet (kuş düşmeye, yerçekimi/borular akmaya devam eder)
     setInterval(() => {
         if (!MP.on || !MP.go || !MP.startAt || !document.hidden || gameState !== 'playing') return;
@@ -11024,6 +11221,10 @@ function _mpWide(on) {
             triggerBossFight(); _bossStartTime -= late * STEP_MS;
         }
         const q = MP.evs; if (!q) return;
+        // Tek oyunculu: altın yağmuru / boss / ters yerçekimi sürerken hava olayı BAŞLAMAZ; takvim (kalan tüm olaylarla birlikte) kayar, aralıklar korunur
+        if (!MP.on && MP.evi < q.length && (_goldRainBusy() || bossActive || reverseGravityActive || _gravPending) && q[MP.evi].st <= MP.steps + 60) {
+            const sh = MP.steps + 61 - q[MP.evi].st; for (let k = MP.evi; k < q.length; k++) { q[k].st += sh; q[k].end += sh; }
+        }
         while (MP.evi < q.length && q[MP.evi].st <= MP.steps) {
             const e = q[MP.evi++], late = Math.max(0, MP.steps - e.st);
             if (e.type === 'grav') {
@@ -11041,38 +11242,37 @@ function _mpWide(on) {
         moon:  { col: '#bcd0ff', warn: () => '🌙 AY YERÇEKİMİ GELİYOR!', lab: () => '🌙 AY YERÇEKİMİ' },
         heavy: { col: '#ff9d57', warn: () => '🪨 AĞIR YERÇEKİMİ GELİYOR!', lab: () => '🪨 AĞIR YERÇEKİMİ' },
         grav:  { col: '#00ccff', warn: () => '🔄 TERS YERÇEKİMİ GELİYOR!', lab: () => '🔄 TERS YERÇEKİMİ' },
-        quake:    { col: '#d9a066', warn: () => '🌋 DEPREM GELİYOR!', lab: () => '🌋 DEPREM' },
         glide:    { col: '#7dffc9', warn: () => '🪂 SÜZÜLME GELİYOR! DÜŞÜŞ YAVAŞLIYOR', lab: () => '🪂 SÜZÜLME' }
     };
     function _mpRDir(e, t) { return e.dir * ((Math.floor((t - e.st - e.lead) / 150) & 1) ? -1 : 1); }   // ters rüzgar: yön 2,5 sn'de bir değişir
     // O anda etkin (uyarı süresi bitmiş) olay; ters yerçekimi kendi sistemiyle yürüdüğü için hariç
     function _mpEvAny() {
         const q = MP.evs; if (!q || !q.length) return null; const t = MP.steps | 0;
-        if (!MP.on && (reverseGravityActive || _gravPending)) return null;   // tek oyunculuda: ters yerçekimi sürerken hava olayı etki etmez (yerçekimleri çakışmasın)
         for (let i = 0; i < q.length; i++) { const e = q[i]; if (e.st > t) break; if (e.type !== 'grav' && t >= e.st + e.lead && t < e.end) return e; }
         return null;
     }
     function _mpWindApply(dt) {
         const e = _mpEvAny(); if (!e) return; dt = dt || 1; const t = MP.steps | 0;
-        if ((e.type === 'storm' || e.type === 'quake') && (hasPU('shield') || hasPU('ghost'))) return;   // kalkan / hayalet: fırtınadan etkilenmez (ters yerçekimi ayrı sistemdir, onu etkilemez)
+        const gs = bird.gravity < 0 ? -1 : 1;   // ters yerçekiminde "aşağı" yönü tersine döner: ay / ağır yerçekimi / süzülme buna göre çalışır
         if (e.type === 'wind') bird.vy += e.dir * 0.6 * dt;
         else if (e.type === 'rwind') bird.vy += _mpRDir(e, t) * 0.6 * dt;
         else if (e.type === 'storm') bird.vy += (Math.sin(t * 0.085) * 0.62 + Math.sin(t * 0.031 + 1) * 0.3) * dt;   // savuran türbülans
-        else if (e.type === 'moon') bird.vy -= 0.8 * dt;     // daha hafif: yavaş düşer, süzülür
-        else if (e.type === 'heavy') bird.vy += 0.65 * dt;   // daha ağır: hızlı düşer
-        else if (e.type === 'glide') { if (bird.vy > 6.5) bird.vy = 6.5; }   // süzülme: düşüş hızı sınırlanır (rahatlatan olay)
-        else if (e.type === 'quake') {   // deprem: yarım saniyede bir, herkeste aynı yönde ani sarsıntı (adım numarasından türetilir)
-            const u = t - e.st - e.lead;
-            if (u >= 0 && u % 30 === 0) bird.vy += ((Math.imul((u / 30 | 0) + 1, 2654435761) >>> 13) & 1 ? -1 : 1) * 4.5;
-        }
+        else if (e.type === 'moon') bird.vy -= gs * 0.8 * dt;     // daha hafif: yavaş düşer, süzülür
+        else if (e.type === 'heavy') bird.vy += gs * 0.65 * dt;   // daha ağır: hızlı düşer
+        else if (e.type === 'glide') { if (gs > 0) { if (bird.vy > 6.5) bird.vy = 6.5; } else if (bird.vy < -6.5) bird.vy = -6.5; }   // süzülme: düşüş hızı sınırlanır (rahatlatan olay)
     }
     // ---- TEK OYUNCULU HAVA OLAYLARI: çok oyunculudaki olayların aynısı (rüzgar, ters rüzgar, fırtına, ay / ağır yerçekimi), belirli aralıklarla ----
     // Aynı sistem kullanılır: olay takvimi oyun ADIMINA bağlıdır (FPS / ekran hızından bağımsız), uyarı yazısı + süre çubuğu + ekran efektleri aynıdır.
     const _SP = { on: false };
     const _evOn = () => MP.on || (_SP.on && gameState !== 'menu' && gameState !== 'gameOver');
+    // Tek oyunculu: şu an (uyarı süresi dahil) bir hava olayı sürüyor mu? Sürüyorsa altın yağmuru çıkmaz, olay bitince çıkar
+    window._spEvNow = function () {
+        if (MP.on || !_SP.on || !MP.evs) return false;
+        const q = MP.evs, t = MP.steps | 0, i = (MP.evi | 0) - 1; return i >= 0 && i < q.length && t < q[i].end;
+    };
     function _spMakeEvents() {
-        const types = ['wind', 'rwind', 'storm', 'moon', 'heavy'], ev = [];
-        const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000 };
+        const types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'glide'], ev = [];
+        const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, glide: () => 10000 + Math.random() * 3000 };
         let t = 20000 + Math.random() * 8000, last = '';
         while (t < 3 * 60 * 60 * 1000) {
             let type; do { type = types[Math.random() * types.length | 0]; } while (type === last);
@@ -11126,14 +11326,6 @@ function _mpWide(on) {
             ctx.strokeStyle = 'rgba(255,190,140,' + (0.4 * a) + ')'; ctx.lineWidth = lw; ctx.beginPath();
             for (let i = 0; i < 24; i++) { const x = ((i * PHI) % 1) * W, y = (((i * PSI + 0.3) % 1) * H + u * (30 + (i % 4) * 8)) % H; ctx.moveTo(x, y); ctx.lineTo(x, y + H * 0.05); }
             ctx.stroke();
-        }
-        else if (e.type === 'quake') {
-            // deprem: ekran sarsılır (kendi üstüne kaydırılmış kopya), sarsıntı anlarında toz + kahverengi parlama
-            const q = a, dx = Math.round((Math.sin(t * 2.3) + Math.sin(t * 5.1)) * W * 0.0035 * q), dy = Math.round((Math.sin(t * 3.1 + 1) + Math.sin(t * 6.7)) * H * 0.004 * q);
-            ctx.drawImage(canvas, dx, dy);
-            const f = u % 30; if (f < 6) { ctx.fillStyle = 'rgba(120,80,40,' + (0.16 * (1 - f / 6) * a) + ')'; ctx.fillRect(0, 0, W, H); }
-            ctx.fillStyle = 'rgba(190,150,100,' + (0.35 * a) + ')';
-            for (let i = 0; i < 26; i++) { const x = ((i * PHI) % 1) * W, y = (((i * PSI + 0.2) % 1) * H + u * (2 + (i % 4))) % H; ctx.fillRect(x, y, lw * 1.4, lw * 1.4); }
         } else if (e.type === 'glide') {
             // süzülme: hafif yeşil-mavi ton + yavaşça süzülen tüyler
             ctx.fillStyle = 'rgba(120,255,200,' + (0.07 * a) + ')'; ctx.fillRect(0, 0, W, H);
@@ -11167,7 +11359,7 @@ function _mpWide(on) {
     setTimeout(inviteBoot, 700);
     // Öldüğünde sunucuya bildir
     const _tgo = triggerGameOver;
-    triggerGameOver = function () { const was = gameState; if (MP.on && MP.room && was === 'playing') document.body.classList.add('mpDead'); _tgo.apply(this, arguments); if (MP.on && was === 'playing' && gameState === 'gameOver') MP.deadAt = performance.now(); if (MP.on && was === 'playing' && gameState === 'gameOver') { try { _finalizeRun(); } catch (e) {} } if (MP.on && was === 'playing' && gameState === 'gameOver' && MP.sock && MP.sock.connected) MP.sock.emit('dead', score); if (MP.on && was === 'playing' && gameState === 'gameOver' && specList().length) startSpec(); };
+    triggerGameOver = function () { const was = gameState; if (MP.on && MP.room && was === 'playing') document.body.classList.add('mpDead'); _tgo.apply(this, arguments); if (MP.on && was === 'playing' && gameState === 'gameOver') MP.deadAt = performance.now(); if (MP.on && was === 'playing' && gameState === 'gameOver') { try { _finalizeRun(); } catch (e) {} } if (MP.on && was === 'playing' && gameState === 'gameOver' && MP.sock && MP.sock.connected) { try { window._mpFlush && window._mpFlush(); } catch (e) {} MP.sock.emit('dead', score, Math.round(bird.y * 10) / 10, Math.round(bird.vy * 10), MP.steps | 0); } if (MP.on && was === 'playing' && gameState === 'gameOver' && specList().length) startSpec(); };
 })();
 // İsim etiketi: ekran dışına taşmaz; komşu etiketlerle çakışmasın diye 3 sıraya dağıtılır (üst / alt / üst-yüksek)
 function _mpPutLabel(Lb, x, y, slot, lh, sz) {
@@ -11831,3 +12023,62 @@ body.portrait #mpEvHud { top:auto !important; bottom:14vh !important; }
 body.portrait #mpToasts { top:auto !important; bottom:10vh !important; flex-direction:column-reverse; }
 body.portrait #activePowerupHUD { top:112px !important; }
 </style>
+<script>
+/* ===== PeepoClap simgeleri =====
+   assets/images/peepoclap.png (veya .webp / .gif) dosyası varsa, oyundaki emoji simgelerin çoğu bu görselle değişir.
+   Dosya yoksa hiçbir şey değişmez, emojiler olduğu gibi kalır. */
+(function () {
+    var CANDIDATES = ['assets/images/peepoclap.png', 'assets/images/peepoclap.webp', 'assets/images/peepoclap.gif'];
+    var ICON_ONLY = /^[\p{Extended_Pictographic}\uFE0F\u200D\s]{1,8}$/u;
+    var KEEP = /[\u{1F512}\u25C0\u25B6\u2B50\u{1F947}\u{1F948}\u{1F949}\u{1F480}]/u;   // kilit, ok, yıldız, madalya, kafatası: yerinde kalsın
+    var SRC = null, queued = false, pending = [];
+    var ONLY = '.mpBi, .mpEmb, .pcOK';   // 1) lobideki ODA KUR butonu  2) ODANI KUR ekranı amblemi  3) ODAYI KUR butonu
+    var st = document.createElement('style');
+    st.textContent = '.pcIc{display:inline-block;width:1.2em;height:1.2em;object-fit:contain;vertical-align:-.22em;pointer-events:none;user-select:none;-webkit-user-drag:none}';
+    document.head.appendChild(st);
+
+    function convert(el) {
+        if (!el || el.nodeType !== 1 || el.dataset.pc || el.children.length) return;
+        var t = (el.textContent || '').trim();
+        if (!t || !ICON_ONLY.test(t) || KEEP.test(t)) return;
+        if (t.indexOf('\u{1F3E0}') < 0 || !el.matches(ONLY)) return;   // yalnızca oda kurma yerlerindeki ev simgeleri
+        el.dataset.pc = '1';
+        var img = document.createElement('img');
+        img.className = 'pcIc'; img.src = SRC; img.alt = t; img.draggable = false; img.decoding = 'async';
+        el.textContent = ''; el.appendChild(img);
+    }
+    function scan(root) {
+        if (!root || root.nodeType !== 1) return;
+        convert(root);
+        var all = root.querySelectorAll(ONLY);
+        for (var i = 0; i < all.length; i++) convert(all[i]);
+    }
+    function flush() {
+        queued = false;
+        var list = pending; pending = [];
+        for (var i = 0; i < list.length; i++) scan(list[i]);
+    }
+    function start() {
+        scan(document.body);
+        new MutationObserver(function (ms) {
+            for (var i = 0; i < ms.length; i++) {
+                var m = ms[i];
+                if (m.target && m.target.nodeType === 1) {
+                    if (m.target.dataset && m.target.dataset.pc && !m.target.querySelector('.pcIc')) delete m.target.dataset.pc;   // JS simgeyi yeniden yazdıysa tekrar çevir
+                    pending.push(m.target);
+                }
+                for (var j = 0; j < m.addedNodes.length; j++) if (m.addedNodes[j].nodeType === 1) pending.push(m.addedNodes[j]);
+            }
+            if (!queued && pending.length) { queued = true; requestAnimationFrame(flush); }
+        }).observe(document.body, { childList: true, subtree: true });
+    }
+    // Dosya var mı? Sırayla dene; yoksa hiçbir şey yapma.
+    (function probe(i) {
+        if (i >= CANDIDATES.length) return;
+        var im = new Image();
+        im.onload = function () { SRC = CANDIDATES[i]; start(); };
+        im.onerror = function () { probe(i + 1); };
+        im.src = CANDIDATES[i];
+    })(0);
+})();
+</script>
