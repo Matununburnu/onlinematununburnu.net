@@ -10,6 +10,7 @@ const httpServer = http.createServer((req, res) => { res.writeHead(200, { 'Conte
 const io = new Server(httpServer, {
   cors: { origin: '*' },
   pingInterval: 10000, pingTimeout: 10000,   // kopan bağlantı ~20 sn yerine ~10-20 sn içinde anlaşılır
+  transports: ['websocket'],                 // polling → websocket yükseltmesi gecikme/sıçrama yaratır; istemci zaten yalnızca websocket kullanır
   perMessageDeflate: false,                  // küçük paketlerde sıkıştırma gecikme yaratır
   maxHttpBufferSize: 1e5
 });
@@ -38,7 +39,7 @@ function makeEvents(freq) {
   return ev;
 }
 
-const MAX = 12, MAX_ROOMS = 500, TICK = 16, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
+const MAX = 12, MAX_ROOMS = 500, TICK = 33, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
 const BOSS_MS = 20000, BOSS_REST = 4000;   // boss süresi (istemcideki BOSS_DURATION ile aynı) ve iki boss arası en az bekleme
 const BOSS_STEP = { low: 100, normal: 60, high: 30 };   // sonraki boss için gereken skor farkı (sıklık ayarı: az / normal / sık)
 const STEP_MS = 1000 / 60, BOSS_SCORE = 50, BOSS_LEAD = 1500, SPEED_MUL = { slow: 0.7, normal: 1, fast: 1.7 };
@@ -127,6 +128,42 @@ function listDirty() {
   if (_listT) return;
   _listT = setTimeout(() => { _listT = 0; io.to('lobbyWatch').emit('rl', roomList()); }, 80);
 }
+// Bekleyen konum örneklerini odaya tek toplu pakette gönderir. Ölüm / çıkış öncesi da çağrılır: son örnekler kaybolmaz
+function flushRoom(r, reliable) {
+  const out = [];
+  r.players.forEach(p => {
+    const q = p.q; if (!q || !q.length) return;
+    const sl = r.slots[p.id];
+    if (sl !== undefined) for (let i = 0; i < q.length; i++) out.push(sl, q[i][0], q[i][1], q[i][2], q[i][3], q[i][4] | 0);
+    q.length = 0; p.dirty = false;
+  });
+  if (out.length) (reliable ? io.to(r.code) : io.to(r.code).volatile).emit('P6', out);
+}
+// Ölüm bildirimi: önce o oyuncunun son örnekleri (güvenilir) gider, sonra 'gone' (ölüm adımı + son konum ile) → herkes düşüşü aynı oyun adımında başlatır
+function goneOf(r, p) {
+  flushRoom(r, true);
+  const m = { id: p.id, score: p.score };
+  if (p.st >= 0) { m.st = p.st; m.y = p.y; m.vy = p.vy; }
+  io.to(r.code).emit('gone', m);
+}
+// Konum örneklerini doğrula + kuyruğa ekle. a = düz dizi: [y, vy*10, skor, adım, zıplama sayacı] × n. false → oyuncu elendi
+function ingest(r, p, s, a, now) {
+  const n = Math.min((a.length / 5) | 0, 32), maxSt = Math.max(0, (now - r.startAt) / STEP_MS) + 600;   // gelecekten (10 sn ötesi) adım numarası = sahte paket
+  const q = p.q || (p.q = []), added = [];
+  let lastSc = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * 5, st = num(a[o + 3], 0, 1e9) | 0;
+    if (st > maxSt || st <= p.st) continue;   // eski / yinelenen / sahte adım
+    const y = Math.round(num(a[o], -5000, 20000) * 10) / 10, vy = num(a[o + 1], -2000, 2000) | 0, jc = num(a[o + 4], 0, 1e7) | 0, sc = num(a[o + 2], 0, 1e7) | 0;
+    p.y = y; p.vy = vy; p.st = st; p.jc = jc; p.dirty = true; p.last = now;
+    const e = [y, vy, 0, st, jc, sc]; q.push(e); added.push(e); lastSc = sc;
+  }
+  while (q.length > 24) q.shift();
+  if (!added.length) return true;
+  if (!okScore(r, p, lastSc, now, s)) return false;
+  for (const e of added) e[2] = Math.min(e[5], p.score);
+  return true;
+}
 const push = r => { io.to(r.code).emit('room', pub(r)); listDirty(); };
 const connected = r => [...r.players.values()].filter(p => !p.gone);
 function leave(s, why) {
@@ -137,7 +174,7 @@ function leave(s, why) {
   if (r.started && p) {
     // Oyun sürerken çıkan / bağlantısı kopan oyuncu ÖLMÜŞ sayılır: haritadan kalkar, tur bitene kadar listede "elendi" görünür, geri giremez
     p.gone = true; p.dirty = false;
-    if (p.alive) { p.alive = false; io.to(r.code).emit('gone', { id: p.id, score: p.score }); }
+    if (p.alive) { p.alive = false; goneOf(r, p); }
   } else r.players.delete(s.id);
   if (!connected(r).length) { rooms.delete(r.code); listDirty(); return; }
   if (p) addChat(r, { s: 1, k: 'l', x: p.name + (why === 'kick' ? ' odadan atıldı' : ' odadan ayrıldı') });
@@ -162,21 +199,53 @@ function okScore(r, p, sc, now, s) {
     p.strikes++; sc = mx;
     if (s && p.strikes >= 30 && p.alive) {   // ~1 sn boyunca imkansız skor gönderdi: hileli istemci
       p.alive = false; p.score = Math.max(p.score, sc);
-      io.to(r.code).emit('gone', { id: p.id, score: p.score }); s.emit('err', 'Geçersiz skor tespit edildi, elendin'); push(r); check(r);
+      goneOf(r, p); s.emit('err', 'Geçersiz skor tespit edildi, elendin'); push(r); check(r);
       return false;
     }
   }
   if (sc > p.score) p.score = sc;
   return true;
 }
+// Aynı kullanıcı (istemci kimliği) başka bir sekmeden ZATEN bir odadaysa ikinci kez oda kuramaz / odaya giremez.
+// true döner ve hata gönderir → çağıran işlem durdurulur. Kopmuş (donmuş) eski bağlantı varsa onu odadan çıkarıp yola devam eder.
+function otherTabInRoom(s, cid) {
+  if (!cid) { s.emit('err', 'Geçersiz istemci, sayfayı yenileyip tekrar dene'); return true; }
+  const now = Date.now(), stale = [];
+  for (const r0 of rooms.values()) {
+    for (const p of r0.players.values()) {
+      if (p.cid !== cid || p.id === s.id || p.gone) continue;
+      const old = io.sockets.sockets.get(p.id);
+      if (!old) continue;
+      // Eskiden burada son 'hb' paketinin 15 sn içinde gelip gelmediğine bakılıyordu; arka plana alınmış sekmelerde
+      // tarayıcı setInterval'ı yavaşlattığı için hb gecikebiliyor ve hâlâ bağlı olan sekme yanlışlıkla "koptu" sayılıp
+      // atılıyordu (yeni sekme de bu yüzden aynı odaya girebiliyordu). old.connected socket.io'nun KENDİ tuttuğu gerçek
+      // bağlantı durumudur, istemci zamanlayıcısından etkilenmez: bağlantı gerçekten açıksa her zaman doğru sonucu verir.
+      if (old.connected) { s.emit('err', 'Bu hesapla zaten başka bir sekmede odadasın. Önce oradan çık, sonra tekrar dene'); return true; }
+      stale.push(old);
+    }
+  }
+  stale.forEach(old => { old.emit('err', 'Bağlantın koptuğu için odandan çıkarıldın'); leave(old); });
+  return false;
+}
+function bossCheck(r, p, now) {
+  // Boss açıksa: odada ilk 50 skora ulaşan oyuncu ilk boss'u herkes için tetikler (50'den sonra boss DAİMA çıkar). Sonraki bosslar sıklık ayarına göre skor aralığıyla gelir
+  if (r.opts.boss !== false && p.score >= Math.max(BOSS_SCORE, r.bossNext)) {
+    const bt = Math.max(0, now - r.startAt) + BOSS_LEAD;
+    if (bt >= r.bossEnd + BOSS_REST) {   // önceki boss bitmeden yenisi başlamaz
+      r.bossEnd = bt + BOSS_MS; r.bossNext = p.score + (BOSS_STEP[r.opts.bossf] || BOSS_STEP.normal);
+      io.to(r.code).emit('boss', { t: bt });
+    }
+  }
+}
 function join(s, r, d) {
   const cid = String(d.cid || '').slice(0, 40);
+  if (otherTabInRoom(s, cid)) return;   // aynı kullanıcı yan sekmeden ikinci kez giremez
   if (cid && r.banned.has(cid)) return s.emit('err', 'Bu odadan atıldın, tekrar giremezsin');
   if (r.started) return s.emit('err', 'Oyun başladı');   // oyun sürerken kimse (bağlantısı kopan eski oyuncu dahil) giremez
   if (r.players.size >= MAX) return s.emit('err', 'Oda dolu (' + MAX + '/' + MAX + ')');
   const name = clean(d.name, 12) || 'Oyuncu';
   if (cid) r.members.add(cid);
-  r.players.set(s.id, { id: s.id, cid, name, bird: num(d.bird, 0, 999) | 0, score: 0, alive: !r.started, ready: false, last: Date.now(), y: 0, vy: 0, st: 0, dirty: false, gone: false, strikes: 0 });
+  r.players.set(s.id, { id: s.id, cid, name, bird: num(d.bird, 0, 999) | 0, score: 0, alive: !r.started, ready: false, last: Date.now(), y: 0, vy: 0, st: -1, dirty: false, gone: false, strikes: 0 });
   s.join(r.code); s.data.room = r.code; push(r);
   s.emit('chath', r.chat || []);   // son mesajlar
   if (r.players.size > 1) addChat(r, { s: 1, k: 'j', x: name + ' odaya katıldı' });
@@ -191,7 +260,7 @@ setInterval(() => { lastOn = -1; pushOnline(); }, 15000);
 io.on('connection', s => {
   s.data.t0 = Date.now(); s.data.hb = Date.now();
   connsByIp.set(s.data.ip, (connsByIp.get(s.data.ip) || 0) + 1);
-  s.emit('ver', 8);   // istemci sunucunun güncel olup olmadığını anlasın
+  s.emit('ver', 9);   // istemci sunucunun güncel olup olmadığını anlasın
   s.emit('cfg', { max: MAX });   // oda kapasitesi (istemci göstergeleri buna göre)
   s.on('hb', () => { s.data.hb = Date.now(); });
   s.emit('online', online());   // yayın yalnızca 3 sn'lik zamanlayıcıda (her bağlantıda herkese yayın = O(n²) yük)
@@ -202,6 +271,7 @@ io.on('connection', s => {
     const ip = s.data.ip, cid = String(d.cid || '').slice(0, 40), now = Date.now();
     // 1) Zaten bir odadaysa yeni oda kuramaz: önce odadan çıkmalı / odayı kapatmalı
     if (s.data.room && rooms.has(s.data.room)) return s.emit('err', 'Zaten bir odadasın. Yeni oda kurmak için önce odadan çık');
+    if (otherTabInRoom(s, cid)) return;   // başka sekmede zaten odadaysa oda kuramaz (boş oda da kalmasın diye oda oluşturulmadan önce kontrol)
     // 2) Çok hızlı üst üste oda kurma engellenir
     if (now - (lastCreate.get(ip) || 0) < CREATE_COOLDOWN) return s.emit('err', 'Çok hızlı oda kuruyorsun, birkaç saniye bekle');
     // 3) Aynı oyuncunun (istemci kimliği) hâlâ açık bir odası varsa yenisini kuramaz
@@ -209,7 +279,7 @@ io.on('connection', s => {
       for (const r0 of rooms.values()) {
         if (r0.ownerCid !== cid || !r0.ownerId) continue;
         const old = io.sockets.sockets.get(r0.ownerId);
-        if (old && old.id !== s.id && now - (old.data.hb || 0) < 15000) return s.emit('err', 'Zaten açık bir odan var. Yeni oda kurmak için önce onu kapat');
+        if (old && old.id !== s.id && old.connected) return s.emit('err', 'Zaten açık bir odan var. Yeni oda kurmak için önce onu kapat');
         if (old && old.id !== s.id) { old.emit('err', 'Bağlantın koptuğu için odandan çıkarıldın'); leave(old); }   // kopmuş (donmuş) eski bağlantı: odayı serbest bırak
         else disown(r0, r0.ownerId);
       }
@@ -280,36 +350,35 @@ io.on('connection', s => {
     r.bossNext = BOSS_SCORE;         // sonraki boss için gereken skor: ilk boss ASLA 50'den önce çıkmaz (sıklık ayarı yalnızca sonraki bosslara uygulanır)
     r.bossEnd = 0;                   // çalışan bossun bitiş zamanı (oyun saati, ms): bosslar üst üste binmez
     r.lanes = makeLanes(r.players.size);
-    r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.jc = 0; p.q = []; p.last = Date.now() + 4000; const sl = i++; r.slots[p.id] = sl; p.lead = Math.max(0, r.lanes[sl] - LANE_BASE) / (LANE_PIPE_SPEED * (SPEED_MUL[r.opts.speed] || 1)); });
+    r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.jc = 0; p.q = []; p.st = -1; p.last = Date.now() + 4000; const sl = i++; r.slots[p.id] = sl; p.lead = Math.max(0, r.lanes[sl] - LANE_BASE) / (LANE_PIPE_SPEED * (SPEED_MUL[r.opts.speed] || 1)); });
     r.n0 = i;
     io.to(r.code).emit('start', { seed: Math.random() * 4294967296 >>> 0, startAt: r.startAt, slots: r.slots, lx: r.lanes, n: i, opts: r.opts, events: r.opts.ev === false ? [] : makeEvents(r.opts.evf) }); push(r);
   });
   // Konum paketi: yalnızca saklanır; odaya 40 Hz'lik TOPLU pakette ('S') gönderilir (oyuncu başına ayrı paket yok → ağ yükü ~10 kat azalır)
-  s.on('s', a => {
+  s.on('s', a => {   // eski tek örnekli paket (geri sayım sırasındaki nabız + eski istemciler)
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
-    if (!p || !p.alive || !r.started || !Array.isArray(a)) return;
+    if (!p || !p.alive || !r.started || !Array.isArray(a) || a.length < 5) return;
     const now = Date.now();
-    p.y = Math.round(num(a[0], -5000, 20000) * 10) / 10; p.vy = num(a[1], -2000, 2000) | 0; p.st = num(a[3], 0, 1e9) | 0; p.jc = num(a[4], 0, 1e7) | 0; p.dirty = true; p.last = now;
-    // Örnek kuyruğa da eklenir: yayın zamanlayıcısı ile istemci gönderim zamanlayıcısı birbirine denk gelmediğinde örnekler kaybolmaz / ezilmez (takılmanın ana nedeniydi)
-    const q = p.q || (p.q = []); if (!q.length || p.st > q[q.length - 1][3]) { q.push([p.y, p.vy, 0, p.st, p.jc]); if (q.length > 10) q.shift(); }
-    if (!okScore(r, p, num(a[2], 0, 1e7) | 0, now, s)) return;
-    if (p.q && p.q.length) p.q[p.q.length - 1][2] = p.score;
-    // Herkesle aynı anda boss: odada ilk 50 skora ulaşan oyuncu boss'u herkes için tetikler (başlangıç zamanı oyun saatine göre)
-    // Boss açıksa: odada ilk 50 skora ulaşan oyuncu ilk boss'u herkes için tetikler (50'den sonra boss DAİMA çıkar). Sonraki bosslar sıklık ayarına göre skor aralığıyla gelir
-    if (r.opts.boss !== false && p.score >= Math.max(BOSS_SCORE, r.bossNext)) {
-      const bt = Math.max(0, now - r.startAt) + BOSS_LEAD;
-      if (bt >= r.bossEnd + BOSS_REST) {   // önceki boss bitmeden yenisi başlamaz
-        r.bossEnd = bt + BOSS_MS; r.bossNext = p.score + (BOSS_STEP[r.opts.bossf] || BOSS_STEP.normal);
-        io.to(r.code).emit('boss', { t: bt });
-      }
-    }
+    if (!ingest(r, p, s, [a[0], a[1], a[2], a[3], a[4]], now)) return;
+    p.last = now; bossCheck(r, p, now);
   });
-  s.on('dead', sc => {
+  // Toplu konum paketi (~30 Hz): her oyun adımının örneği ayrı ayrı gelir, kare hızı / zamanlayıcı titreşiminden etkilenmez
+  s.on('b', a => {
+    const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
+    if (!p || !p.alive || !r.started || !Array.isArray(a) || a.length < 5 || a.length > 5 * 64) return;
+    const now = Date.now();
+    if (!ingest(r, p, s, a, now)) return;
+    p.last = now; bossCheck(r, p, now);
+  });
+  s.on('dead', (sc, y, vy, st) => {
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
     if (!p || !r.started || !p.alive) return;
-    okScore(r, p, num(sc, 0, 1e7) | 0, Date.now(), null);   // ölüm skoru da doğrulanır (geçersizse mümkün olan en yüksek değere indirilir)
+    const now = Date.now();
+    // Ölüm anındaki son konum + oyun adımı da kuyruğa girer: herkes düşüşü aynı adımda aynı yerden başlatır
+    if (typeof y === 'number' && typeof st === 'number') ingest(r, p, null, [y, vy, sc, st, p.jc], now);
+    okScore(r, p, num(sc, 0, 1e7) | 0, now, null);   // ölüm skoru da doğrulanır (geçersizse mümkün olan en yüksek değere indirilir)
     p.alive = false;
-    io.to(r.code).emit('gone', { id: s.id, score: p.score }); push(r); check(r);
+    goneOf(r, p); push(r); check(r);
   });
   // Eklenti: ilk alan kazanır, sonuç odadaki herkese gider (haritadan herkes için kalkar)
   s.on('pu', d => {
@@ -362,13 +431,8 @@ io.on('connection', s => {
   });
 });
 
-// 60 Hz toplu konum yayını (kuyruktaki tüm örneklerle): [slot, y, vy, skor, oyun adımı, ...] (adım numarası sayesinde herkes konumu aynı oyun zamanında çizer)
-setInterval(() => rooms.forEach(r => {
-  if (!r.started) return;
-  const out = [];
-  r.players.forEach(p => { if (p.alive && p.dirty) { p.dirty = false; const sl = r.slots[p.id], q = p.q; if (sl !== undefined && q && q.length) { for (let i = 0; i < q.length; i++) out.push(sl, q[i][0], q[i][1], q[i][2], q[i][3], q[i][4] | 0); } if (q) q.length = 0; } });
-  if (out.length) io.to(r.code).volatile.emit('P6', out);
-}), TICK);
+// ~30 Hz toplu konum yayını (kuyruktaki TÜM örneklerle): [slot, y, vy, skor, oyun adımı, zıplama sayacı, ...]. Adım numarası sayesinde herkes konumu aynı oyun zamanında çizer
+setInterval(() => rooms.forEach(r => { if (r.started) flushRoom(r, false); }), TICK);
 
 // SILENT_MS (4 sn) hiç veri göndermeyen (interneti giden / donmuş) canlı oyuncuyu elenmiş say
 setInterval(() => rooms.forEach(r => {
@@ -376,7 +440,7 @@ setInterval(() => rooms.forEach(r => {
   const now = Date.now(), dead = [];
   r.players.forEach(p => { if (p.alive && now - p.last > SILENT_MS) { p.alive = false; dead.push(p); } });
   if (!dead.length) return;
-  dead.forEach(p => io.to(r.code).emit('gone', { id: p.id, score: p.score }));
+  dead.forEach(p => goneOf(r, p));
   push(r); check(r);
 }), 1000);
 // Bellek temizliği: eski oda kurma kayıtları silinir
