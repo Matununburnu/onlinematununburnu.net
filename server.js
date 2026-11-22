@@ -121,9 +121,10 @@ function cleanProf(d) {
     pm: cnum(d.pm, 1e11), st: cnum(d.st, 99999), bst: cnum(d.bst, 99999), dth: cnum(d.dth, 1e8), fav: cnum(d.fav, 999)
   };
 }
+const cleanCol = v => /^#[0-9a-fA-F]{6}$/.test(String(v || '')) ? String(v).toLowerCase() : '';   // isim rengi (#rrggbb) veya boş = varsayılan
 const code = () => { let c; do { c = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPRSTUVYZ'[Math.random() * 21 | 0]).join(''); } while (rooms.has(c)); return c; };
 const num = (v, lo, hi) => (typeof v === 'number' && isFinite(v)) ? Math.max(lo, Math.min(hi, v)) : 0;
-const pub = r => ({ code: r.code, started: r.started, public: !!r.public, max: r.max, name: r.name || '', opts: r.opts, sp: r.specs ? r.specs.size : 0, players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, bird: p.bird, host: p.id === r.host, score: p.score, alive: p.alive, ready: !!p.ready, gone: !!p.gone, vr: !!p.vr })) });
+const pub = r => ({ code: r.code, started: r.started, public: !!r.public, max: r.max, name: r.name || '', opts: r.opts, sp: r.specs ? r.specs.size : 0, players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, bird: p.bird, host: p.id === r.host, score: p.score, alive: p.alive, ready: !!p.ready, gone: !!p.gone, vr: !!p.vr, col: p.col || '' })) });
 // Anlık oda listesi: oda sayısı/oyuncu sayısı/durum değişince lobi listesini açık olan herkese hemen (80 ms toplulaştırılarak) gönderilir
 let _listT = 0;
 function listDirty() {
@@ -265,9 +266,9 @@ function join(s, r, d) {
   if (cid && r.banned.has(cid)) return s.emit('err', 'Bu odadan atıldın, tekrar giremezsin');
   if (r.started) return s.emit('err', 'Oyun başladı');   // oyun sürerken kimse (bağlantısı kopan eski oyuncu dahil) giremez
   if (r.players.size >= r.max) return s.emit('err', 'Oda dolu (' + r.max + '/' + r.max + ')');
-  const name = clean(d.name, 12) || 'Oyuncu';
+  const name = clean(d.name, 15) || 'Oyuncu';
   if (cid) r.members.add(cid);
-  r.players.set(s.id, { id: s.id, cid, name, bird: num(d.bird, 0, 999) | 0, score: 0, alive: !r.started, ready: false, last: Date.now(), y: 0, vy: 0, st: -1, dirty: false, gone: false, strikes: 0 });
+  r.players.set(s.id, { id: s.id, cid, name, col: cleanCol(d.col), bird: num(d.bird, 0, 999) | 0, score: 0, alive: !r.started, ready: false, last: Date.now(), y: 0, vy: 0, st: -1, dirty: false, gone: false, strikes: 0 });
   s.join(r.code); s.data.room = r.code; push(r);
   s.emit('chath', r.chat || []);   // son mesajlar
   if (r.players.size > 1) addChat(r, { s: 1, k: 'j', x: name + ' odaya katıldı' });
@@ -334,9 +335,17 @@ io.on('connection', s => {
   s.on('rename', v => {
     const r = rooms.get(s.data.room), p = r && (r.players.get(s.id) || r.specs.get(s.id));
     if (!p || p.gone || !gate(s, 'rename', 400)) return;
-    const n = clean(v, 12);
+    const n = clean(v, 15);
     if (!n || !/^[a-zA-Z0-9çÇğĞıİöÖşŞüÜ]+$/.test(n) || n === p.name) return;
     p.name = n; push(r);
+  });
+  // Oyuncunun isim rengi: sohbette ve oyuncu listesinde herkese bu renkte görünür (boş = varsayılan renk)
+  s.on('color', v => {
+    const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
+    if (!p || p.gone || !gate(s, 'color', 15)) return;
+    const c = cleanCol(v); if (c === (p.col || '')) return;
+    p.col = c;   // renk hemen kaydedilir (sohbet mesajları anında yeni renkle gider); oda yayını kısa süre toplulaştırılır
+    clearTimeout(s.data.cpT); s.data.cpT = setTimeout(() => { const rr = rooms.get(s.data.room); if (rr) push(rr); }, 80);
   });
   s.on('watch', on => { if (on) s.join('lobbyWatch'); else s.leave('lobbyWatch'); });
   s.on('list', cb => {
@@ -466,7 +475,7 @@ io.on('connection', s => {
     const r = rooms.get(s.data.room), p = r && (r.players.get(s.id) || r.specs.get(s.id));   // izleyiciler de yazabilir
     if (!p || p.gone || typeof txt !== 'string' || !gate(s, 'chat', 700)) return;
     const x = cleanMsg(txt, 140); if (!x) return;
-    addChat(r, { id: s.id, n: p.name, x, d: (r.started && !p.alive) ? 1 : 0 });   // d: ölmüş / izleyici
+    addChat(r, { id: s.id, n: p.name, c: p.col || '', x, d: (r.started && !p.alive) ? 1 : 0 });   // d: ölmüş / izleyici
   });
   // Canlı izleme: yalnızca herkese açık ve OYUNDA olan odalar. İzleyici oyuncu sayılmaz (hazır/skor/ölüm işlemlerine girmez), sohbete yazabilir
   s.on('spectate', d => {
@@ -481,7 +490,7 @@ io.on('connection', s => {
     const cid = String(d.cid || '').slice(0, 40);
     if (otherTabInRoom(s, cid)) return;
     if (cid && r.banned.has(cid)) return s.emit('err', 'Bu odadan atıldın, tekrar giremezsin');
-    r.specs.set(s.id, { id: s.id, cid, name: clean(d.name, 12) || 'İzleyici', bird: num(d.bird, 0, 999) | 0 });
+    r.specs.set(s.id, { id: s.id, cid, name: clean(d.name, 15) || 'İzleyici', bird: num(d.bird, 0, 999) | 0 });
     s.join(r.code); s.data.room = r.code;
     s.emit('sstart', Object.assign({}, r.startMsg, { claimed: r.claimed.size <= 3000 ? [...r.claimed] : [], boss: r.lastBoss }));
     push(r);
