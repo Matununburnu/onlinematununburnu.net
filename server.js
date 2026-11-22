@@ -24,13 +24,15 @@ io.use((s, next) => { const ip = ipOf(s); if ((connsByIp.get(ip) || 0) >= MAX_CO
 // glide: SÜZÜLME (düşüş hızı sınırlanır)
 const EV_PAUSE = { low: 2.2, normal: 1, high: 0.4 };   // olaylar arası bekleme çarpanı (az / normal / sık)
 const EV_HORIZON = 3 * 60 * 60 * 1000;   // olay takvimi 3 saat boyunca üretilir (çok uzun turlarda da olaylar sürsün)
-function makeEvents(freq) {
+const EV_TYPES = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'glide'];   // glide: SÜZÜLME
+function makeEvents(freq, off) {
   const mul = EV_PAUSE[freq] || 1;
-  const ev = [], types = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'glide'];   // glide: SÜZÜLME
+  const ev = [], types = EV_TYPES.filter(t => !(Array.isArray(off) && off.includes(t)));   // oda sahibinin kapattığı olaylar çıkmaz
+  if (!types.length) return ev;
   const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, glide: () => 10000 + Math.random() * 3000 };
   let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '';
   while (t < EV_HORIZON) {
-    let type; do { type = types[Math.random() * types.length | 0]; } while (type === last);
+    let type; do { type = types[Math.random() * types.length | 0]; } while (type === last && types.length > 1);
     last = type;
     const d = Math.round(dur[type]());
     ev.push({ type, t: Math.round(t), d, dir: Math.random() < 0.5 ? -1 : 1 });
@@ -39,7 +41,8 @@ function makeEvents(freq) {
   return ev;
 }
 
-const MAX = 12, MAX_ROOMS = 500, TICK = 33, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
+const MAX_SPECS = 30;   // oda başına en fazla canlı izleyici
+const MAX = 12, MIN_PLAYERS = 2, MAX_ROOMS = 500, TICK = 33, rooms = new Map();   // oda başına en fazla oyuncu (istemciye 'cfg' ile bildirilir)
 const BOSS_MS = 20000, BOSS_REST = 4000;   // boss süresi (istemcideki BOSS_DURATION ile aynı) ve iki boss arası en az bekleme
 const BOSS_STEP = { low: 100, normal: 60, high: 30 };   // sonraki boss için gereken skor farkı (sıklık ayarı: az / normal / sık)
 const STEP_MS = 1000 / 60, BOSS_SCORE = 50, BOSS_LEAD = 1500, SPEED_MUL = { slow: 0.7, normal: 1, fast: 1.7 };
@@ -102,8 +105,8 @@ function roomList() {
   const now = Date.now();
   if (listCache.data && now - listCache.t < 250) return listCache.data;
   const out = [];
-  rooms.forEach(r => { const h = r.players.get(r.host); out.push({ code: r.public ? r.code : undefined, pub: !!r.public, n: r.players.size, host: h ? h.name : 'Oyuncu', started: r.started, name: r.name || '', rid: r.uid }); });
-  const rank = x => (!x.started && x.n < MAX ? 0 : 1) * 2 + (x.pub ? 0 : 1);
+  rooms.forEach(r => { const h = r.players.get(r.host); out.push({ code: r.public ? r.code : undefined, pub: !!r.public, n: r.players.size, mx: r.max, host: h ? h.name : 'Oyuncu', started: r.started, name: r.name || '', rid: r.uid, sp: r.specs.size }); });
+  const rank = x => (!x.started && x.n < x.mx ? 0 : 1) * 2 + (x.pub ? 0 : 1);
   out.sort((a, b) => rank(a) - rank(b) || b.n - a.n);
   listCache.t = now; listCache.data = out.slice(0, 40);
   return listCache.data;
@@ -120,7 +123,7 @@ function cleanProf(d) {
 }
 const code = () => { let c; do { c = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPRSTUVYZ'[Math.random() * 21 | 0]).join(''); } while (rooms.has(c)); return c; };
 const num = (v, lo, hi) => (typeof v === 'number' && isFinite(v)) ? Math.max(lo, Math.min(hi, v)) : 0;
-const pub = r => ({ code: r.code, started: r.started, public: !!r.public, name: r.name || '', opts: r.opts, players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, bird: p.bird, host: p.id === r.host, score: p.score, alive: p.alive, ready: !!p.ready })) });
+const pub = r => ({ code: r.code, started: r.started, public: !!r.public, max: r.max, name: r.name || '', opts: r.opts, sp: r.specs ? r.specs.size : 0, players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, bird: p.bird, host: p.id === r.host, score: p.score, alive: p.alive, ready: !!p.ready, gone: !!p.gone, vr: !!p.vr })) });
 // Anlık oda listesi: oda sayısı/oyuncu sayısı/durum değişince lobi listesini açık olan herkese hemen (80 ms toplulaştırılarak) gönderilir
 let _listT = 0;
 function listDirty() {
@@ -166,9 +169,17 @@ function ingest(r, p, s, a, now) {
 }
 const push = r => { io.to(r.code).emit('room', pub(r)); listDirty(); };
 const connected = r => [...r.players.values()].filter(p => !p.gone);
+// Tur bitince (ya da oda kapanınca) canlı izleyiciler odadan çıkarılır; istemci onları menüye döndürür
+function endSpecs(r, res) {
+  if (!r.specs || !r.specs.size) return;
+  const ids = [...r.specs.keys()]; r.specs.clear();
+  const w = res && res[0] ? { w: res[0].name, sc: res[0].score | 0 } : null;
+  ids.forEach(id => { const t = io.sockets.sockets.get(id); if (!t) return; t.leave(r.code); t.data.room = null; t.emit('specend', w); });
+}
 function leave(s, why) {
   const r = rooms.get(s.data.room); s.data.room = null;
   if (!r) return;
+  if (r.specs.has(s.id)) { r.specs.delete(s.id); s.leave(r.code); push(r); return; }   // canlı izleyici ayrıldı: oyuncu işlemleri yapılmaz
   const p = r.players.get(s.id);
   s.leave(r.code); disown(r, s.id);
   if (r.started && p) {
@@ -176,7 +187,7 @@ function leave(s, why) {
     p.gone = true; p.dirty = false;
     if (p.alive) { p.alive = false; goneOf(r, p); }
   } else r.players.delete(s.id);
-  if (!connected(r).length) { rooms.delete(r.code); listDirty(); return; }
+  if (!connected(r).length) { endSpecs(r, null); rooms.delete(r.code); listDirty(); return; }
   if (p) addChat(r, { s: 1, k: 'l', x: p.name + (why === 'kick' ? ' odadan atıldı' : ' odadan ayrıldı') });
   if (r.host === s.id || !r.players.has(r.host) || r.players.get(r.host).gone) r.host = connected(r)[0].id;
   push(r); check(r);
@@ -184,8 +195,10 @@ function leave(s, why) {
 function check(r) {
   if (r.started && ![...r.players.values()].some(p => p.alive)) {
     r.started = false;
-    r.players.forEach(p => { p.ready = false; });   // tur bitti: sonraki oyun için herkes yeniden hazır olmalı
-    io.to(r.code).emit('over', pub(r).players.sort((a, b) => b.score - a.score));
+    r.players.forEach(p => { p.ready = false; p.vr = false; });   // tur bitti: sonraki oyun için herkes yeniden hazır olmalı (vr: sonuç ekranını görüntüleme durumu istemciler bildirince açılır)
+    const res = pub(r).players.sort((a, b) => b.score - a.score);
+    endSpecs(r, res);   // izleyiciler 'over' yerine kendi 'specend' mesajını alır
+    io.to(r.code).emit('over', res);
     r.players.forEach((p, id) => { if (p.gone) r.players.delete(id); });   // turda kopan oyuncular listeden silinir
     if (!r.players.has(r.host)) { const c = connected(r)[0]; if (c) r.host = c.id; }
     if (!r.players.size) { rooms.delete(r.code); listDirty(); return; }
@@ -223,6 +236,15 @@ function otherTabInRoom(s, cid) {
       if (old.connected) { s.emit('err', 'Bu hesapla zaten başka bir sekmede odadasın. Önce oradan çık, sonra tekrar dene'); return true; }
       stale.push(old);
     }
+    // İzleyiciler de aynı kontrole dahil: aksi halde biri bir odayı izlerken başka sekmeden
+    // ikinci bir oda kurabilir / oyuncu olarak katılabilirdi (tek sekme kuralı atlatılırdı)
+    for (const p of r0.specs.values()) {
+      if (p.cid !== cid || p.id === s.id) continue;
+      const old = io.sockets.sockets.get(p.id);
+      if (!old) continue;
+      if (old.connected) { s.emit('err', 'Bu hesapla zaten başka bir sekmede odadasın. Önce oradan çık, sonra tekrar dene'); return true; }
+      stale.push(old);
+    }
   }
   stale.forEach(old => { old.emit('err', 'Bağlantın koptuğu için odandan çıkarıldın'); leave(old); });
   return false;
@@ -232,7 +254,7 @@ function bossCheck(r, p, now) {
   if (r.opts.boss !== false && p.score >= Math.max(BOSS_SCORE, r.bossNext)) {
     const bt = Math.max(0, now - r.startAt) + BOSS_LEAD;
     if (bt >= r.bossEnd + BOSS_REST) {   // önceki boss bitmeden yenisi başlamaz
-      r.bossEnd = bt + BOSS_MS; r.bossNext = p.score + (BOSS_STEP[r.opts.bossf] || BOSS_STEP.normal);
+      r.bossEnd = bt + BOSS_MS; r.lastBoss = bt; r.bossNext = p.score + (BOSS_STEP[r.opts.bossf] || BOSS_STEP.normal);
       io.to(r.code).emit('boss', { t: bt });
     }
   }
@@ -242,7 +264,7 @@ function join(s, r, d) {
   if (otherTabInRoom(s, cid)) return;   // aynı kullanıcı yan sekmeden ikinci kez giremez
   if (cid && r.banned.has(cid)) return s.emit('err', 'Bu odadan atıldın, tekrar giremezsin');
   if (r.started) return s.emit('err', 'Oyun başladı');   // oyun sürerken kimse (bağlantısı kopan eski oyuncu dahil) giremez
-  if (r.players.size >= MAX) return s.emit('err', 'Oda dolu (' + MAX + '/' + MAX + ')');
+  if (r.players.size >= r.max) return s.emit('err', 'Oda dolu (' + r.max + '/' + r.max + ')');
   const name = clean(d.name, 12) || 'Oyuncu';
   if (cid) r.members.add(cid);
   r.players.set(s.id, { id: s.id, cid, name, bird: num(d.bird, 0, 999) | 0, score: 0, alive: !r.started, ready: false, last: Date.now(), y: 0, vy: 0, st: -1, dirty: false, gone: false, strikes: 0 });
@@ -260,7 +282,7 @@ setInterval(() => { lastOn = -1; pushOnline(); }, 15000);
 io.on('connection', s => {
   s.data.t0 = Date.now(); s.data.hb = Date.now();
   connsByIp.set(s.data.ip, (connsByIp.get(s.data.ip) || 0) + 1);
-  s.emit('ver', 9);   // istemci sunucunun güncel olup olmadığını anlasın
+  s.emit('ver', 13);   // istemci sunucunun güncel olup olmadığını anlasın
   s.emit('cfg', { max: MAX });   // oda kapasitesi (istemci göstergeleri buna göre)
   s.on('hb', () => { s.data.hb = Date.now(); });
   s.emit('online', online());   // yayın yalnızca 3 sn'lik zamanlayıcıda (her bağlantıda herkese yayın = O(n²) yük)
@@ -288,8 +310,9 @@ io.on('connection', s => {
     let own = 0; rooms.forEach(r0 => { if (r0.ownerIp === ip && r0.ownerId) own++; });
     if (own >= MAX_ROOMS_PER_IP) return s.emit('err', 'Bu ağdan en fazla ' + MAX_ROOMS_PER_IP + ' oda açılabilir. Önce açık odalarını kapat');
     if (rooms.size >= MAX_ROOMS) return s.emit('err', 'Sunucu şu an dolu, biraz sonra dene');
-    const rname = clean(d.rname, 15);
-    const r = { code: code(), uid: Math.random().toString(36).slice(2, 10), opts: { gap: 'normal', speed: 'normal', ev: true, evf: 'normal', boss: true, bossf: 'normal' }, host: s.id, started: false, public: d.public === true || d.public === 1, name: rname, players: new Map(), slots: {}, claimed: new Set(), banned: new Set(), members: new Set(), ownerId: s.id, ownerCid: cid, ownerIp: ip };
+    const rname = clean(d.rname, 30);
+    const rmax = Math.max(MIN_PLAYERS, Math.min(MAX, (parseInt(d.max, 10) || MAX)));   // lobi lideri seçer (2–12); dokunmazsa 12
+    const r = { code: code(), uid: Math.random().toString(36).slice(2, 10), opts: { gap: 'normal', speed: 'normal', ev: true, evf: 'normal', off: [], boss: true, bossf: 'normal', video: true, map: (/^[0-5]$/.test(String(d.map)) ? parseInt(d.map, 10) : 0) }, host: s.id, started: false, max: rmax, public: d.public === true || d.public === 1, name: rname, players: new Map(), specs: new Map(), slots: {}, claimed: new Set(), banned: new Set(), members: new Set(), ownerId: s.id, ownerCid: cid, ownerIp: ip };
     lastCreate.set(ip, now);
     rooms.set(r.code, r); join(s, r, d);
   });
@@ -307,6 +330,14 @@ io.on('connection', s => {
   // Lobi listesi açıkken canlı güncelleme: 'watch' 1 → dinlemeye başla, 0 → bırak (bağlantı kopunca otomatik düşer)
   // Bekleme odasında karakter değiştirme (yalnızca oyun başlamadan): herkesin listesinde avatar anında güncellenir
   s.on('bird', v => { const r = rooms.get(s.data.room), p = r && r.players.get(s.id); if (!p || r.started || !gate(s, 'bird', 200)) return; p.bird = num(v, 0, 999) | 0; push(r); });
+  // Oyuncu adını değiştirince odadaki herkesin listesinde / skor tablosunda anında güncellenir
+  s.on('rename', v => {
+    const r = rooms.get(s.data.room), p = r && (r.players.get(s.id) || r.specs.get(s.id));
+    if (!p || p.gone || !gate(s, 'rename', 400)) return;
+    const n = clean(v, 12);
+    if (!n || !/^[a-zA-Z0-9çÇğĞıİöÖşŞüÜ]+$/.test(n) || n === p.name) return;
+    p.name = n; push(r);
+  });
   s.on('watch', on => { if (on) s.join('lobbyWatch'); else s.leave('lobbyWatch'); });
   s.on('list', cb => {
     if (typeof cb !== 'function') return;
@@ -318,7 +349,7 @@ io.on('connection', s => {
     if (typeof cb !== 'function' || !gate(s, 'exists', 500)) return;
     d = (d && typeof d === 'object') ? d : {};
     const r = rooms.get(String(d.code || '').trim().toUpperCase()), cid = String(d.cid || '').slice(0, 40);
-    cb(!!r && !(cid && r.banned.has(cid)) && !r.started && r.players.size < MAX);
+    cb(!!r && !(cid && r.banned.has(cid)) && !r.started && r.players.size < r.max);
   });
   // Oda sahibi odayı herkese açık / özel yapabilir
   s.on('setpub', v => { const r = rooms.get(s.data.room); if (!r || r.host !== s.id) return; r.public = !!v; push(r); });
@@ -330,12 +361,23 @@ io.on('connection', s => {
     else if (k === 'speed' && ['slow', 'normal', 'fast'].includes(v)) r.opts.speed = v;
     else if (k === 'ev') r.opts.ev = (v === 'on' || v === true);
     else if (k === 'evf' && ['low', 'normal', 'high'].includes(v)) r.opts.evf = v;
+    else if (k === 'evt' && EV_TYPES.includes(v)) { const off = Array.isArray(r.opts.off) ? r.opts.off : []; r.opts.off = off.includes(v) ? off.filter(x => x !== v) : off.concat(v); }   // tek tek hava olayı aç / kapat
     else if (k === 'boss') r.opts.boss = (v === 'on' || v === true);   // boss olayı aç / kapat
     else if (k === 'bossf' && ['low', 'normal', 'high'].includes(v)) r.opts.bossf = v;   // boss sıklığı
-    else return;
+    else if (k === 'video') r.opts.video = (v === 'on' || v === true);   // videolar çıksın / çıkmasın
+    else if (k === 'max') { const n = parseInt(v, 10); if (!(n >= MIN_PLAYERS && n <= MAX) || n < r.players.size) return push(r); r.max = n; }   // geçersizse istemci gerçek değerle yeniden eşitlenir   // oyuncu sayısı (oda kurulduktan sonra, mevcut oyuncu sayısının altına inemez)
+    else if (k === 'map' && /^[0-5]$/.test(String(v))) r.opts.map = parseInt(v, 10);   // harita (arka plan) 0-5
+    else return push(r);
     push(r);
   });
   // Hazır ol sistemi: oda sahibi dışındaki oyuncular hazır olduğunu bildirir
+  // Sonuç ekranını görüntüleme durumu: oyuncu o an SONUÇLAR ekranındaysa true (oda ekranına geçince / kapatınca false)
+  s.on('vr', v => {
+    const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
+    if (!p || r.started || !gate(s, 'vr', 150)) return;
+    v = !!v; if (p.vr === v) return;
+    p.vr = v; push(r);
+  });
   s.on('ready', v => {
     const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
     if (!p || r.started) return;
@@ -350,9 +392,11 @@ io.on('connection', s => {
     r.bossNext = BOSS_SCORE;         // sonraki boss için gereken skor: ilk boss ASLA 50'den önce çıkmaz (sıklık ayarı yalnızca sonraki bosslara uygulanır)
     r.bossEnd = 0;                   // çalışan bossun bitiş zamanı (oyun saati, ms): bosslar üst üste binmez
     r.lanes = makeLanes(r.players.size);
-    r.players.forEach(p => { p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.jc = 0; p.q = []; p.st = -1; p.last = Date.now() + 4000; const sl = i++; r.slots[p.id] = sl; p.lead = Math.max(0, r.lanes[sl] - LANE_BASE) / (LANE_PIPE_SPEED * (SPEED_MUL[r.opts.speed] || 1)); });
+    r.players.forEach(p => { p.vr = false; p.alive = true; p.gone = false; p.strikes = 0; p.score = 0; p.dirty = false; p.jc = 0; p.q = []; p.st = -1; p.last = Date.now() + 4000; const sl = i++; r.slots[p.id] = sl; p.lead = Math.max(0, r.lanes[sl] - LANE_BASE) / (LANE_PIPE_SPEED * (SPEED_MUL[r.opts.speed] || 1)); });
     r.n0 = i;
-    io.to(r.code).emit('start', { seed: Math.random() * 4294967296 >>> 0, startAt: r.startAt, slots: r.slots, lx: r.lanes, n: i, opts: r.opts, events: r.opts.ev === false ? [] : makeEvents(r.opts.evf) }); push(r);
+    r.lastBoss = undefined;
+    r.startMsg = { seed: Math.random() * 4294967296 >>> 0, startAt: r.startAt, slots: r.slots, lx: r.lanes, n: i, opts: r.opts, events: r.opts.ev === false ? [] : makeEvents(r.opts.evf, r.opts.off) };   // sonradan giren izleyiciye de aynısı gönderilir
+    io.to(r.code).emit('start', r.startMsg); push(r);
   });
   // Konum paketi: yalnızca saklanır; odaya 40 Hz'lik TOPLU pakette ('S') gönderilir (oyuncu başına ayrı paket yok → ağ yükü ~10 kat azalır)
   s.on('s', a => {   // eski tek örnekli paket (geri sayım sırasındaki nabız + eski istemciler)
@@ -419,10 +463,29 @@ io.on('connection', s => {
     push(r);
   });
   s.on('chat', txt => {
-    const r = rooms.get(s.data.room), p = r && r.players.get(s.id);
+    const r = rooms.get(s.data.room), p = r && (r.players.get(s.id) || r.specs.get(s.id));   // izleyiciler de yazabilir
     if (!p || p.gone || typeof txt !== 'string' || !gate(s, 'chat', 700)) return;
     const x = cleanMsg(txt, 140); if (!x) return;
     addChat(r, { id: s.id, n: p.name, x, d: (r.started && !p.alive) ? 1 : 0 });   // d: ölmüş / izleyici
+  });
+  // Canlı izleme: yalnızca herkese açık ve OYUNDA olan odalar. İzleyici oyuncu sayılmaz (hazır/skor/ölüm işlemlerine girmez), sohbete yazabilir
+  s.on('spectate', d => {
+    d = (d && typeof d === 'object') ? d : {};
+    if (!gate(s, 'spec', 500)) return;
+    if (s.data.room) leave(s);
+    const r = rooms.get(String(d.code || '').trim().toUpperCase());
+    if (!r) return s.emit('err', 'Oda bulunamadı');
+    if (!r.public) return s.emit('err', 'Bu oda izlemeye açık değil');
+    if (!r.started || !r.startMsg) return s.emit('err', 'Oyun şu an sürmüyor, odaya katılabilirsin');
+    if (r.specs.size >= MAX_SPECS) return s.emit('err', 'İzleyici sınırı doldu (' + MAX_SPECS + ')');
+    const cid = String(d.cid || '').slice(0, 40);
+    if (otherTabInRoom(s, cid)) return;
+    if (cid && r.banned.has(cid)) return s.emit('err', 'Bu odadan atıldın, tekrar giremezsin');
+    r.specs.set(s.id, { id: s.id, cid, name: clean(d.name, 12) || 'İzleyici', bird: num(d.bird, 0, 999) | 0 });
+    s.join(r.code); s.data.room = r.code;
+    s.emit('sstart', Object.assign({}, r.startMsg, { claimed: r.claimed.size <= 3000 ? [...r.claimed] : [], boss: r.lastBoss }));
+    push(r);
+    s.emit('chath', r.chat || []);   // 'room' olayından SONRA: istemci oda değişince sohbeti temizler
   });
   s.on('leave', () => leave(s));
   s.on('disconnect', () => {
