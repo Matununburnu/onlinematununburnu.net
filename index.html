@@ -4425,14 +4425,16 @@ function buildRandomVideoSchedule() {
     const queue = shuffleArray(ALL_VIDEO_DEFS.filter(d => d.id !== BAN_VIDEO_ID && d.id !== KARPUZ_VIDEO_ID), _rng);
     // karpuz yalnizca gec skorlarda (600-950) cikar
     const _lateSlots = [];
-    for (let s2 = 600; s2 <= VIDEO_LAST_SCORE - VIDEO_STEP; s2 += VIDEO_STEP) _lateSlots.push(s2);
+    const _mpV = (typeof MP !== 'undefined' && MP.on), _first = _mpV ? 75 : VIDEO_FIRST_SCORE;   // çok oyunculu: videolar 75'ten başlar, her 50 skorda (75,125,175…)
+    for (let s2 = _mpV ? 625 : 600; s2 <= VIDEO_LAST_SCORE - VIDEO_STEP; s2 += VIDEO_STEP) _lateSlots.push(s2);
     const karpuzScore = _lateSlots[Math.floor((_rng || Math.random)() * _lateSlots.length)];
     randomVideoSchedule = [];
-    for (let sc = VIDEO_FIRST_SCORE; sc <= VIDEO_LAST_SCORE; sc += VIDEO_STEP) {
+    for (let sc = _first; sc <= VIDEO_LAST_SCORE; sc += VIDEO_STEP) {
         const def = (sc === BAN_VIDEO_SCORE) ? banDef : (sc === karpuzScore ? karpuzDef : queue.shift());   // havuz biterse (9 video) araya video girmez, tekrar da etmez
         if (!def) continue;
         randomVideoSchedule.push({ score: sc, videoDef: def, played: false, warmed: false });
     }
+    if (_mpV && banDef) randomVideoSchedule.push({ score: BAN_VIDEO_SCORE, videoDef: banDef, played: false, warmed: false });   // 75 + 50k hiç 1000'e denk gelmez: ban yine 1000'de
     videoScheduleIndex = 0;
     // İlk sıradaki video (skor 100) en acil olandır: diğerleriyle aynı anda indirilmeye başlarsa bant genişliğini
     // paylaşıp genelde yetişemiyordu. Oyun başlar başlamaz (skor 0), tek başına ve en yüksek öncelikle indirilmeye başlanır.
@@ -6771,7 +6773,8 @@ function _nameLabel(text, col) {
     return L;
 }
 function _drawBirdImg(img) {
-    const r = _normRect(img), box = bird.size * 0.95;
+    const _k = (typeof MP !== 'undefined' && MP.on) ? 1.3 : 1;   // çok oyunculu: karakter %30 büyük görünür
+    const r = _normRect(img), box = bird.size * 0.95 * _k;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     if (r) {
         // Görünen alan herkes için eşit: tam kare/dolu görseller küçülür, siluetler kutuya sığacak kadar büyür
@@ -6781,7 +6784,7 @@ function _drawBirdImg(img) {
         if (spr) ctx.drawImage(spr, -w / 2, -h / 2, w, h);
         else ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, -w / 2, -h / 2, w, h);
     } else {
-        ctx.drawImage(img, -bird.size / 2, -bird.size / 2, bird.size, bird.size);
+        ctx.drawImage(img, -bird.size / 2 * _k, -bird.size / 2 * _k, bird.size * _k, bird.size * _k);
     }
 }
 let _pipeSpr = null, _pipeSprK = 0;
@@ -7128,11 +7131,34 @@ function playJumpSoundFast() {
         jumpSound.play().catch(() => {});
     } catch(e) {}
 }
+// ÇOK OYUNCULU SES HAKEMİ: ses taşıyan bir video oynarken müzik duraklatılır (tek ses), video bitince müzik devam eder.
+// Zıplama sesi bayrağı (jumpSoundAllowed) takılı kalmasın diye çok oyunculuda yalnızca gerçekten çalan videoya bakılır.
+let _mpDucked = [];
+function _mpVideoAudible() {
+    try {
+        for (const v of _randomVideoEls) { if (v && v.style.display !== 'none' && !v.paused && !v.ended && !v.muted) return true; }
+    } catch (e) {}
+    return false;
+}
+function _mpJumpOK() { return !_mpVideoAudible(); }
+setInterval(() => {
+    try {
+        if (typeof MP === 'undefined' || !MP.on) { _mpDucked = []; return; }
+        if (_mpVideoAudible()) {
+            for (const a of [gameSound, specialSong]) { if (a && !a.paused) { a.pause(); if (!_mpDucked.includes(a)) _mpDucked.push(a); } }
+            if (_jumpSrcNode) { try { _jumpSrcNode.stop(); } catch (e) {} _jumpSrcNode = null; }
+        } else if (_mpDucked.length) {
+            if (gameState === 'playing') _mpDucked.forEach(a => { try { a.play().catch(() => {}); } catch (e) {} });
+            _mpDucked = [];
+        }
+        if (gameState === 'playing' && !jumpSoundAllowed && !_mpVideoAudible() && score >= 12) jumpSoundAllowed = true;   // takılı kalan sessizlik düzelir
+    } catch (e) {}
+}, 150);
 function flap() {
     if (gameState === 'ready') { beginPlay(); return; }
     if (gameState === 'playing') {
         bird.vy = bird.flap;
-        if (jumpSoundAllowed) playJumpSoundFast();
+        if ((typeof MP !== 'undefined' && MP.on) ? _mpJumpOK() : jumpSoundAllowed) playJumpSoundFast();   // çok oyunculu: yalnızca sesli video çalarken sustur
         jumpAnimTimer = performance.now() + 167; // animasyon bitiş zamanı
         if (typeof MP !== 'undefined' && MP.on) { MP.jc = (MP.jc | 0) + 1; if (window._mpSendPos) setTimeout(window._mpSendPos, 0); }   // çok oyunculu: her zıplama sayılır, konum paketiyle herkese gider (diğerlerinde zıplama animasyonu için)
         jumpCount++;
@@ -8339,7 +8365,7 @@ function showPlayerProfile(ent, soft) {
 // ONLINE OYUNCU SAYACI (yalnızca ana menüde görünür)
 // Oyun tek oyunculu; bu bağlantı sadece canlı oyuncu sayısını almak için.
 // =============================================
-const ONLINE_SERVER = 'https://onlinematununburnu-net-14.onrender.com';
+const ONLINE_SERVER = 'https://azizin-minik-kusu-2.onrender.com';
 let _onlineCount = null;
 function setOnlineStatus(connected) {
     const hud = document.getElementById('onlineCountHUD');
@@ -10239,7 +10265,7 @@ function buyCharWithShard(type) {
 // =====================================================================
 // ÇOK OYUNCULU (lobi + oda, en fazla 12 oyuncu; sınır sunucudan 'cfg' ile gelir)
 // =====================================================================
-const MP_SERVER = 'https://onlinematununburnu-net-14.onrender.com';
+const MP_SERVER = 'https://onlinematununburnu-net-12.onrender.com';
 const MP = { max: 12, on: false, go: false, wide: false, sock: null, room: null, others: {}, slots: {}, n: 1, seed: 0, pi: 0, off: 0, fx: {}, pend: {}, slotId: {}, claimed: {}, mine: {}, gravAt: 1e9, gr: null };
 function _mpRng(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 // Geniş harita: oyuncular yatayda farklı şeritlere dizilir (herkes herkesi aynı anda görür)
@@ -10700,6 +10726,8 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
     }
     const inn = box.firstChild;
     new MutationObserver(() => { const w = !!inn.querySelector('.mpGrid'); if (inn.classList.contains('wide') !== w) inn.classList.toggle('wide', w); }).observe(inn, { childList: true });
+    // İsim + renk kutusu yalnızca oda ekranının ızgarası (.mpRoomG) içinde olabilir: lobide / kartın dışında kalırsa hemen sökülür
+    new MutationObserver(() => { const e = window._mpIdBoxNode && window._mpIdBoxNode(); if (e && e.isConnected && !e.closest('.mpRoomG')) e.remove(); }).observe(box, { childList: true, subtree: true });
     const $ = id => document.getElementById(id), esc = t => String(t).replace(/[<>&]/g, '');
     function err(t) { const e = $('mpErr'); if (e) e.textContent = t || ''; }
     function nm() {
@@ -10805,6 +10833,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         });
     }
     function lobby() {
+        try { if (MP._idEl) MP._idEl.remove(); } catch (e) {}
         try { _mpRoomBgOff(); } catch (e) {}
         _waitUI = false; try { mpUiSync(null); } catch (e) {}
         const n = (playerNameInput.value || '').trim();
@@ -10837,15 +10866,19 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
     }
     // ODA KUR'a basınca: oda adı ekranı (en az 1, en çok 30 karakter)
     function roomNameStep(n) {
+        MP._draftRm = { opts: Object.assign({}, OPT_DEF), max: MP.max, players: [{ host: true }], started: false }; MP._draftOn = false;
         try { _mpRoomBgOff(); } catch (e) {}
         _waitUI = false; clearInterval(_pubT);
         inn.innerHTML = '<div class="mpTop"><div class="mpEmb">🏠</div><h3>ODANI KUR</h3><div class="sub">Odana bir ad ver, sonra kimlerin girebileceğini seç · harita, oyuncu sayısı ve diğer ayarları oda kurulunca seçersin</div></div>'
             + '<div class="mpRnBox"><label>Oda adı <small>en az 1, en çok 30 karakter</small></label><div class="mpRnRow"><input id="mpRoomName" maxlength="30" autocomplete="off" placeholder="Örn: Peepo Clap"><span class="mpRnCnt" id="mpRnCnt">0/30</span></div><div class="mpChips">' + ['Peepo Clap', 'Boru Avcıları', 'Kuşçular Kampı', 'Uçan Dostlar'].map(s => '<button type="button" class="mpChip">' + s + '</button>').join('') + '</div></div>'
+            + '<button type="button" class="mpQB" id="mpDraftSet" style="margin:10px 0"><span class="mpQTx"><b>⚙️ ODA AYARLARI</b><small id="mpDraftSum"></small></span></button>'
             + swHtml('mpPubSw', true) + '<div class="mpPrev"><span class="mpPrevT">ÖNİZLEME</span><div class="mpPrevC"><span class="mpPrevLk" id="mpPvLk">🔓</span><div class="mpPrevI"><b id="mpPvNm">Oda adın burada görünür</b><small>👑 ' + esc(n) + ' · <span id="mpPvVis">Herkese açık</span></small></div></div></div>' + '<div id="mpErr"></div><button class="btn wait" id="mpMk" disabled><span class="pcOK">🏠</span> ODAYI KUR</button><button class="btn sec" id="mpMkBack">← GERİ</button>';
         const inp = $('mpRoomName'), mk = $('mpMk'); let pubSel = true;
         const psw = $('mpPubSw'); psw.onclick = () => { pubSel = !pubSel; swUpd(psw, pubSel); const lk = $('mpPvLk'), vs = $('mpPvVis'); if (lk) { lk.textContent = pubSel ? '🔓' : '🔒'; lk.parentNode.classList.toggle('priv', !pubSel); } if (vs) vs.textContent = pubSel ? 'Herkese açık' : 'Özel oda'; };
         const upd = () => { const c = inp.value.replace(/[<>&]/g, ''); if (c !== inp.value) inp.value = c; $('mpRnCnt').textContent = inp.value.length + '/30'; { const pv = $('mpPvNm'); if (pv) pv.textContent = inp.value.trim() || 'Oda adın burada görünür'; } const ok = inp.value.trim().length >= 1; mk.disabled = !ok; mk.classList.toggle('wait', !ok); err(''); };
-        const create = () => { const rn = inp.value.trim().slice(0, 30); if (rn.length < 1) return err('Oda adı en az 1 karakter olmalı.'); go('Oda kuruluyor…', n, { name: n, rname: rn, bird: selectedBird, public: pubSel }, 'create', rn); };
+        $('mpDraftSet').onclick = () => { MP._draftOn = true; MP._ui.set = true; const m = _smMake('set', MP._draftRm); _setSync(m, MP._draftRm); };
+        _draftChips();
+        const create = () => { const rn = inp.value.trim().slice(0, 30); if (rn.length < 1) return err('Oda adı en az 1 karakter olmalı.'); MP._pendOpts = MP._draftRm; go('Oda kuruluyor…', n, { name: n, rname: rn, bird: selectedBird, public: pubSel }, 'create', rn); };
         inp.oninput = upd; inp.onkeydown = e => { if (e.key === 'Enter') create(); };
         mk.onclick = create; $('mpMkBack').onclick = () => lobby();
         inn.querySelectorAll('.mpChip').forEach(c => c.onclick = () => { inp.value = c.textContent; upd(); inp.focus(); });
@@ -10969,7 +11002,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         const h = m.querySelector('.mpChHero');
         if (h && cur) { const rd = RARITY[BIRD_RARITIES[cur.id] || 'common'] || RARITY.common, im = h.querySelector('img'); h.style.setProperty('--c', rd.color); const u = _bsrc(cur.img); if (im.getAttribute('src') !== u) im.src = u; im.style.background = cur.special ? '#000' : ''; h.querySelector('b').textContent = cur.name; const he = h.querySelector('em'); he.textContent = rd.label; he.style.background = rd.bgColor; he.style.color = rd.textColor; }
     }
-    function _smClose(k) { MP._ui[k] = false; const m = box.querySelector('.mpSM.' + k); if (m) { if (m._kd) document.removeEventListener('keydown', m._kd, true); m.remove(); } }
+    function _smClose(k) { MP._ui[k] = false; if (k === 'set') MP._draftOn = false; const m = box.querySelector('.mpSM.' + k); if (m) { if (m._kd) document.removeEventListener('keydown', m._kd, true); m.remove(); } }
     function _smMake(k, r) {
         const m = document.createElement('div'); m.className = 'mpSM ' + k;
         m.innerHTML = k === 'set' ? _setModalHtml() : _chModalHtml();
@@ -10979,22 +11012,24 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         m.addEventListener('click', e => {
             const t = e.target; e.stopPropagation();
             if (t === m || t.closest('.mpSX') || t.closest('.mpSOk')) return _smClose(k);
-            const rm = MP.room; if (!rm) return;
+            const _dr = !!(k === 'set' && MP._draftOn), rm = _dr ? MP._draftRm : MP.room; if (!rm) return;
             if (k === 'ch') { const fb = t.closest('.mpChF'); if (fb) { MP._chF = fb.dataset.f || ''; _chSync(m); return; } const c = t.closest('.mpChC:not(.lk)'); if (c) { _smClose('ch'); pickBird(+c.dataset.id); } return; }
-            if (!(MP.sock && MP.sock.connected)) return;
+            if (!_dr && !(MP.sock && MP.sock.connected)) return;
+            const _em = (o) => { if (!_dr) MP.sock.emit('opts', o); }, _rd = () => { if (_dr) { _setSync(m, rm); try { _draftChips(); } catch (e) {} } else room(rm); };
             const cp = t.closest('#mpRCapM, #mpRCapP');
-            if (cp) { let n = (rm.max || MP.max) + (cp.id === 'mpRCapM' ? -1 : 1); n = Math.max(Math.max(2, rm.players.length), Math.min(MP.max, n)); if (n === (rm.max || MP.max)) return; MP.sock.emit('opts', { k: 'max', v: n }); rm.max = n; room(rm); return; }
+            if (cp) { let n = (rm.max || MP.max) + (cp.id === 'mpRCapM' ? -1 : 1); n = Math.max(Math.max(2, rm.players.length), Math.min(MP.max, n)); if (n === (rm.max || MP.max)) return; _em({ k: 'max', v: n }); rm.max = n; _rd(); return; }
             const b = t.closest('[data-k]'); if (!b) return;
             const kk = b.dataset.k, v = b.dataset.v;
-            MP.sock.emit('opts', { k: kk, v: v });
+            _em({ k: kk, v: v });
             rm.opts = Object.assign({}, OPT_DEF, rm.opts);
             if (kk === 'evt') { const off = Array.isArray(rm.opts.off) ? rm.opts.off : []; rm.opts.off = off.includes(v) ? off.filter(x => x !== v) : off.concat(v); }
             else rm.opts[kk] = (kk === 'ev' || kk === 'boss' || kk === 'video') ? v === 'on' : (kk === 'map' ? (parseInt(v, 10) || 0) : v);
             if (kk === 'map') _mapPre(rm.opts.map);
-            room(rm);
+            _rd();
         });
         return m;
     }
+    function _draftChips() { const e = $('mpDraftSum'); if (!e || !MP._draftRm) return; const r = MP._draftRm, o = _optNow(r); e.textContent = 'Harita ' + (_mapIdx(o) + 1) + ' · ' + (r.max || MP.max) + ' oyuncu · Aralık: ' + (OPT_GAP[o.gap] || '') + ' · Hız: ' + (OPT_SPD[o.speed] || ''); }
     function mpUiSync(r) {   // oda her çizildiğinde: açık pencereleri güncel durumla eşitle, geçersizse kapat
         const want = { set: !!(r && !r.started && MP._ui.set && isHostMe(r)), ch: !!(r && !r.started && MP._ui.ch) };
         ['set', 'ch'].forEach(k => {
@@ -11294,7 +11329,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
     function _colUI() {
         const me = MP.sock && MP.sock.id, c = _myCol();
         if (me) inn.querySelectorAll('.mpP[data-id="' + me + '"] .mpN').forEach(n => { n.classList.toggle('hc', !!c); n.style.color = c || ''; n.style.setProperty('--nc', c || ''); });
-        try { chatRecolor(); } catch (e) {}
+        /* chatRecolor kaldırıldı: eski mesajlar yazıldığı andaki renkte kalır */
         idBoxSync();
     }
     function _cpPaint(el) {
@@ -11329,6 +11364,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         const p = _meP(); if (p) p.name = n;
         if (MP.room) room(MP.room);
     }
+    window._mpIdBoxNode = () => MP._idEl;
     function idBoxEl() {
         if (MP._idEl) return MP._idEl;
         const el = MP._idEl = document.createElement('div'); el.className = 'mpId'; el.id = 'mpIdBox'; el.innerHTML = idBoxHtml();
@@ -11378,6 +11414,18 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         _mapPre(mi); try { _applyMap(mi); } catch (e) {}
     }
     function room(r) {
+        if (MP._pendOpts && MP.sock && r.players.some(p => p.id === MP.sock.id && p.host)) {   // oda kurulurken seçilen ayarlar odaya uygulanır
+            const pd = MP._pendOpts; MP._pendOpts = null; const o0 = pd.opts || {};
+            try {
+                if (pd.max && pd.max !== (r.max || MP.max)) { MP.sock.emit('opts', { k: 'max', v: pd.max }); r.max = pd.max; }
+                r.opts = Object.assign({}, OPT_DEF, r.opts);
+                for (const k of ['map', 'gap', 'speed', 'ev', 'evf', 'boss', 'bossf', 'video']) {
+                    if (o0[k] === undefined || o0[k] === OPT_DEF[k]) continue;
+                    MP.sock.emit('opts', { k: k, v: (typeof o0[k] === 'boolean') ? (o0[k] ? 'on' : 'off') : String(o0[k]) }); r.opts[k] = o0[k];
+                }
+                for (const t of (o0.off || [])) { MP.sock.emit('opts', { k: 'evt', v: t }); r.opts.off = (r.opts.off || []).concat(t); }
+            } catch (e) {}
+        }
         if (MP._cpDrag) { MP.room = r; MP._cpPend = r; return; }   // renk sürüklenirken oda yenilenmez (sürükleme kesilmesin); bırakılınca çizilir
         const _scT = inn.scrollTop, _lsT = $('mpList') ? $('mpList').scrollTop : 0, _cgT = $('mpChGrid') ? $('mpChGrid').scrollTop : 0;
         _waitUI = false; clearTimeout(_pt);
@@ -11403,7 +11451,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         const canGo = allReady && r.players.length >= 2;   // en az 2 kişi gerekir
         const goBtn = showRes ? '' : (host && !r.started) ? '<button class="btn' + (!canGo ? ' wait' : '') + '" id="mpGo"' + (!canGo ? ' disabled' : '') + '>' + (r.players.length < 2 ? '👥 EN AZ 2 OYUNCU GEREKLİ' : (!allReady ? '⏳ HERKES HAZIR OLSUN (' + rdyCnt + '/' + others.length + ')' : (MP.res ? '▶ YENİDEN BAŞLAT' : '▶ BAŞLAT'))) + '</button>'
             : (!host && !r.started ? '<div class="sub mpRdyNote">' + (meReady ? 'Oda sahibinin başlatması bekleniyor…' : 'Hazır olduğunda oda sahibi başlatabilir') + '</div>' : (r.started ? '<div class="sub mpRdyNote">Oyun sürüyor · tur bitince tekrar hazır olabilirsin</div>' : ''));
-        const rdyBtn = (!r.started && !showRes) ? '<button class="mpRdyBtn' + (meReady ? ' on' : '') + '" id="mpRdy">' + 'HAZIRIM' + '</button>' : '';
+        const rdyBtn = (!r.started && !showRes) ? '<button class="mpRdyBtn' + (meReady ? ' on' : '') + '" id="mpRdy" aria-pressed="' + (meReady ? 'true' : 'false') + '"><span class="rdTx"><b>' + (meReady ? 'HAZIRSIN' : 'HAZIRIM') + '</b><small>' + (meReady ? 'Vazgeçmek için tekrar dokun' : 'Hazır olmak için dokun') + '</small></span></button>' : '';
         const visHtml = host ? swHtml('mpVis', !!r.public)
             : '<div class="mpVisInfo">' + (r.public ? '🔓 Herkese açık oda' : '🔒 Özel oda') + '</div>';
         const oldNote = MP.ver >= 5 ? '' : '<div class="mpOld">⚠️ Sunucu eski sürümde: ortak boss, skor doğrulama, olay sıklığı ve yeni kurallar çalışmaz. Güncel server.js dosyasını yükle.</div>';
@@ -11415,7 +11463,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
             left = '<div class="mpWinBar">🏆 <b>' + esc(w.name) + '</b> kazandı · ' + w.score + ' puan</div>' + (() => { const pod = list.slice(0, 3), md = ['🥇', '🥈', '🥉'], ord = pod.length === 1 ? [0] : pod.length === 2 ? [1, 0] : [1, 0, 2]; return '<div class="mpPodium">' + ord.map(i => { const p = pod[i]; return '<div class="mpPc p' + (i + 1) + (p.id === me ? ' me' : '') + '"><span class="mpPm">' + md[i] + '</span>' + avatar(p.bird) + '<b>' + esc(p.name) + '</b><span class="mpPs">' + p.score + ' puan</span><div class="mpPb"><i>' + (i + 1) + '</i></div></div>'; }).join('') + '</div>'; })()
                 + (myP ? '<div class="mpStats"><div><small>SIRAN</small><b>' + (['🥇', '🥈', '🥉'][myIdx] || (myIdx + 1) + '.') + '</b></div><div><small>SKORUN</small><b>' + myP.score + '</b></div><div><small>' + (myIdx ? 'LİDERE FARK' : 'DURUM') + '</small><b>' + (myIdx ? '−' + (w.score - myP.score) : '👑 Lider') + '</b></div></div>' : '');
         } else {
-            top = '<div class="mpTop"><div class="mpEmb">🏠</div><h3 class="mpRh"><small class="mpLb">ODA ADI:</small> ' + (r.name ? esc(r.name) : '—') + '</h3><div class="mpRoomBadges"><span class="' + (r.public ? 'pub' : 'priv') + '">' + (r.public ? '🔓 Herkese açık' : '🔒 Özel oda') + '</span><span>👥 ' + cnt + '/' + (r.max || MP.max) + '</span><span class="' + (r.started ? 'live' : '') + '">' + (r.started ? '🎮 Oyunda' : '⏳ Lobi') + '</span></div></div>';
+            top = '<div class="mpTop"><div class="mpEmb">🏠</div><h3 class="mpRh"><small class="mpLb">ODA ADI:</small> ' + (r.name ? esc(r.name) : '—') + '</h3><div class="mpRoomBadges"><span>👥 ' + cnt + '/' + (r.max || MP.max) + '</span><span class="' + (r.started ? 'live' : '') + '">' + (r.started ? '🎮 Oyunda' : '⏳ Lobi') + '</span></div></div>';
             left = '<div class="mpCodeBox"><span class="mpCl">ODA KODU:</span><span class="mpCode' + (shown ? ' show' : '') + '">' + esc(r.code) + '</span><button class="btn mpIco" id="mpEye" title="Kodu göster / gizle" aria-label="Kodu göster / gizle">' + (shown ? '🙈' : '👁') + '</button><button class="btn mpIco" id="mpCopy" title="Kodu kopyala">📋</button></div>'
                 + '<button class="mpInvBtn" id="mpInv">🔗 DAVET BAĞLANTISINI PAYLAŞ</button>' + visHtml + oldNote + settingsHtml(r, host) + (!r.started ? '<div id="mpIdSlot"></div>' + charBtnHtml() : '');
         }
@@ -11426,7 +11474,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
             + '<div class="mpAct2' + (MP.res ? '' : ' one') + '"><button class="btn red" id="mpOut">ODADAN ÇIK</button>' + (MP.res ? '<button class="btn sec" id="mpHide">KAPAT</button>' : '') + '</div>';
         let _cFoc = false; try { _cFoc = document.activeElement === cIn; if (chat.parentNode !== document.body) chatMove(document.body); } catch (e) {}   // yeniden çizim sohbeti silmesin
         let _nmS = null; try { const _ni = $('mpNmIn'); if (_ni && document.activeElement === _ni) _nmS = { v: _ni.value, a: _ni.selectionStart, b: _ni.selectionEnd }; } catch (e) {}
-        inn.innerHTML = top + '<div class="mpGrid" style="align-items:stretch"><div class="mpCol">' + left + '</div><div class="mpCol">' + right + '<div id="mpChatSlot"></div></div></div>';
+        inn.innerHTML = top + '<div class="mpGrid mpRoomG" style="align-items:stretch"><div class="mpCol">' + left + '</div><div class="mpCol">' + right + '<div id="mpChatSlot"></div></div></div>';
         try { chatDock(); if (_cFoc) cIn.focus(); } catch (e) {}
         try { const _sl = $('mpIdSlot'); if (_sl) { _sl.replaceWith(idBoxEl()); idBoxSync(); } if (_nmS && $('mpNmIn')) { const _ni = $('mpNmIn'); _ni.focus(); _ni.setSelectionRange(_nmS.a, _nmS.b); } } catch (e) {}
         inn.scrollTop = _scT; if ($('mpList')) $('mpList').scrollTop = _lsT; if ($('mpChGrid')) { $('mpChGrid').scrollTop = _cgT; inn.querySelectorAll('.mpChC').forEach(c => c.onclick = () => pickBird(+c.dataset.id)); }
@@ -11439,7 +11487,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
             try { if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) { const pr = navigator.share({ title: 'Azizin Minik Kuşu', text: txt, url: url }); if (pr && pr.catch) pr.catch(() => {}); } } catch (e) {}
         };
         inn.querySelectorAll('.mpKick').forEach(b => b.onclick = () => { const q = r.players.find(p => p.id === b.dataset.id); if (q) { _kickAsk = { id: q.id, name: q.name }; kickModal(); } });
-        kickModal(); pmSync(r); profSync(r); mpUiBind(r); try { chatRecolor(); } catch (e) {}
+        kickModal(); pmSync(r); profSync(r); mpUiBind(r); /* chatRecolor kaldırıldı: eski mesajlar yazıldığı andaki renkte kalır */
         if ($('mpGo')) $('mpGo').onclick = () => { if (canGo) MP.sock.emit('start'); };
         if ($('mpRdy')) $('mpRdy').onclick = () => { MP.sock.emit('ready', !meReady); if (meP) { meP.ready = !meReady; room(MP.room); } };   // anında işaretlenir
         if ($('mpHide')) $('mpHide').onclick = () => { box.classList.remove('on'); try { if (MP._vr && MP.sock && MP.sock.connected) { MP._vr = false; MP.sock.emit('vr', false); } } catch (e) {} };
@@ -11572,7 +11620,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         sk.on('s', a => { if (a[0] !== sk.id) sample(a[0], a[1], a[2] / 10, a[3]); });   // eski sunucu uyumu
         sk.on('start', d => {
             _kickAsk = null; kickModal();
-            box.classList.remove('on'); MP.res = null; MP._vr = false; MP.on = true; MP.rd = true; MP.go = false; MP.others = {}; MP.fx = {}; MP.pend = {}; MP.claimed = {}; MP.mine = {}; MP.seed = d.seed >>> 0; MP.pi = 0; MP.steps = 0; MP.jc = 0; MP.txq = []; MP.prevTop = undefined; MP.gravT0 = undefined; MP.bossSt = undefined; MP.bossFired = false; MP.startAt = (typeof d.startAt === 'number' && isFinite(d.startAt)) ? d.startAt : 0; MP.slots = d.slots || {}; MP.lx = Array.isArray(d.lx) ? d.lx : []; MP.n = d.n || 1; MP.slotId = {}; for (const k in MP.slots) MP.slotId[MP.slots[k]] = k;
+            box.classList.remove('on'); MP.res = null; MP._vr = false; MP.on = true; MP.rd = true; MP.go = false; MP.others = {}; MP.fx = {}; MP.fxs = {}; MP.pend = {}; MP.claimed = {}; MP.mine = {}; MP.seed = d.seed >>> 0; MP.pi = 0; MP.steps = 0; MP.jc = 0; MP.txq = []; MP.prevTop = undefined; MP.gravT0 = undefined; MP.bossSt = undefined; MP.bossFired = false; MP.startAt = (typeof d.startAt === 'number' && isFinite(d.startAt)) ? d.startAt : 0; MP.slots = d.slots || {}; MP.lx = Array.isArray(d.lx) ? d.lx : []; MP.n = d.n || 1; MP.slotId = {}; for (const k in MP.slots) MP.slotId[MP.slots[k]] = k;
             MP.gr = _mpRng((MP.seed ^ 0xabcdef) >>> 0); MP.gravAt = 16 + (MP.gr() * 14 | 0);   // ters yerçekimi: herkeste aynı boru sırasında
             gameOverEl.style.display = 'none';
             _mpWide(true);
@@ -11595,7 +11643,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         sk.on('sstart', d => {
             if (!d) return;
             _waitUI = false; clearTimeout(_pt); _kickAsk = null; kickModal();
-            box.classList.remove('on'); MP.res = null; MP.watch = true; MP.on = true; MP.rd = true; MP.go = false; MP.others = {}; MP.fx = {}; MP.pend = {}; MP.mine = {}; MP.claimed = {};
+            box.classList.remove('on'); MP.res = null; MP.watch = true; MP.on = true; MP.rd = true; MP.go = false; MP.others = {}; MP.fx = {}; MP.fxs = {}; MP.pend = {}; MP.mine = {}; MP.claimed = {};
             (Array.isArray(d.claimed) ? d.claimed : []).forEach(id => { MP.claimed[id] = 1; });
             MP.seed = d.seed >>> 0; MP.pi = 0; MP.steps = 0; MP.jc = 0; MP.txq = []; MP.prevTop = undefined; MP.gravT0 = undefined; MP.bossSt = undefined; MP.bossFired = false;
             MP.startAt = (typeof d.startAt === 'number' && isFinite(d.startAt)) ? d.startAt : 0;
@@ -11635,7 +11683,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
             if (d.by === sk.id) { if (!mine) MP.applyPU({ type: d.type }); }   // normalde zaten anında uygulandı
             else {
                 if (mine && !mine.had && hasPU(mine.type)) expirePU(mine.type);   // aynı anda iki kişi aldıysa ikinci gelen geri alınır
-                const dt = POWERUPS[d.type]; if (dt) MP.fx[d.by] = { icon: dt.icon, until: performance.now() + dt.duration };
+                const dt = POWERUPS[d.type]; if (dt) { const _n = performance.now(); MP.fx[d.by] = { icon: dt.icon, until: _n + dt.duration }; ((MP.fxs || (MP.fxs = {}))[d.by] || (MP.fxs[d.by] = {}))[d.type] = { start: _n, end: _n + dt.duration }; }   // diğer oyuncuların kuşunda etkisi görünsün
             }
         });
         sk.on('over', list => {
@@ -11708,7 +11756,9 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
 #mpChat.dock #mpChatPn{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 #mpChat.dock #mpChatLog{flex:1 1 auto;height:0;min-height:120px;max-height:none}
 #mpChat.dock #mpChatRow{opacity:1}
-#mpChat:not(.dock),#mpChat:not(.dock).on{display:none!important}`;
+#mpChat:not(.dock),#mpChat:not(.dock).on{display:none!important}
+#mpChat.spec:not(.dock).on{display:block!important}
+@media (max-width:700px){#mpChat.spec:not(.dock){bottom:calc(6vh + 210px)}}`;
     document.head.appendChild(chatCss);
     const chat = document.createElement('div'); chat.id = 'mpChat';
     chat.innerHTML = '<button id="mpChatTg" title="Sohbet" aria-label="Sohbet">💬<i id="mpChatBd"></i></button><div id="mpChatPn"><div id="mpChatLog"></div><div id="mpChatRow"><input id="mpChatIn" maxlength="140" autocomplete="off" placeholder="Mesaj yaz…"><button id="mpChatSend" title="Gönder">➤</button><button id="mpChatX" title="Küçült">▾</button></div></div>';
@@ -11729,7 +11779,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         if (atEnd || me) cLog.scrollTop = cLog.scrollHeight;
         if (!hist && !_chatOpen && !me) { _chatUnread++; chatBadge(); }
     }
-    function chatRecolor() {   // lobide isim rengi değişince sohbetteki o oyuncunun tüm mesajları yeni renge geçer
+    function chatRecolor() { return; /* devre dışı: mesaj rengi gönderildiği anda sabitlenir */   // lobide isim rengi değişince sohbetteki o oyuncunun tüm mesajları yeni renge geçer
         if (!MP.room) return;
         const me = MP.sock && MP.sock.id;
         cLog.querySelectorAll('.m[data-pid]').forEach(d => {
@@ -11783,6 +11833,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         if (!inRoom) { if (_chatCode !== null) { _chatCode = null; chatClear(); } if (chat.classList.contains('on')) chat.classList.remove('on'); return; }
         if (!chat.classList.contains('on')) chat.classList.add('on');
         const act = _chatHov || document.activeElement === cIn || box.classList.contains('on'), now = Date.now();
+        chat.classList.toggle('spec', !!(MP.on && (MP.watch || MP.spec)));   // izleyici (ölen oyuncu / canlı izleyici) oyun içinde de yazabilir
         chat.classList.toggle('idle', !act);   // oyun sırasında yalnızca son 10 sn'lik mesajlar silik görünür; menüde/yazarken tüm geçmiş
         for (let i = cLog.children.length - 1; i >= 0; i--) { const c = cLog.children[i], old = now - (+c.dataset.t || 0) > 10000; if (c.classList.contains('old') !== old) c.classList.toggle('old', old); }
     }
@@ -11896,7 +11947,7 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         const spOn = !!(MP.spec && mpHold);
         wb.style.display = (mpHold && MP.lock && !MP.watch && (spOn || specList().length)) ? 'block' : 'none';
         wb.textContent = spOn ? '⏳ BEKLEMEYE DÖN' : '👁 OYUNU İZLE';
-        sp.style.display = spOn ? 'flex' : 'none';
+        sp.style.display = 'none';   // üstteki izleme menüsü kaldırıldı: genel oyun izlenir
         if (spOn) {
             const l = specList(); if (!l.some(p => p.id === MP.spec.id)) specCycle(1);
             const t = l.find(p => p.id === MP.spec.id), o = t && MP.others[t.id];
@@ -12083,14 +12134,30 @@ body:has(#milestoneEventHUD[style*="block"]) #mpEvHud{top:calc(min(170px,24vh) +
         pipeInterval = Math.max(20, Math.round(85 / sm));
         currentSpeed = -13 * sm;
     }
+    const SP_EVFAM = { wind: 'w', rwind: 'w', storm: 's', moon: 'g', heavy: 'g', grav: 'g', glide: 'g' };
+    function _spEvPicker(types) {   // torba + aile kuralı: aynı / benzer olay art arda gelmez, her tür sırayla çıkar
+        let bag = []; const hist = [], n = types.length;
+        return () => {
+            if (!bag.length) { bag = types.slice(); for (let i = bag.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; const x = bag[i]; bag[i] = bag[j]; bag[j] = x; } }
+            const last = hist[hist.length - 1], rec = hist.slice(-Math.min(2, n - 1));
+            const okF = t => !rec.includes(t) && (n < 3 || SP_EVFAM[t] !== SP_EVFAM[last]);
+            let t = bag.find(okF);
+            if (t === undefined) { const alt = types.filter(okF); if (alt.length) t = alt[Math.random() * alt.length | 0]; }   // torbada uygun kalmadıysa tüm türlerden seç
+            if (t === undefined) t = bag.find(x => !rec.includes(x));
+            if (t === undefined) t = bag.find(x => x !== last);
+            if (t === undefined) t = bag[0];
+            const bi = bag.indexOf(t); if (bi >= 0) bag.splice(bi, 1); hist.push(t); if (hist.length > 4) hist.shift(); return t;
+        };
+    }
     function _spMakeEvents() {
         const o = window._spo, types = SP_EVT.filter(t => !o.off.includes(t)), ev = [];
         if (o.ev === false || !types.length) return ev;
         const mul = SP_EVMUL[o.evf] || 1;
         const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, glide: () => 10000 + Math.random() * 3000 };
         let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '';
+        const pick = _spEvPicker(types);
         while (t < 3 * 60 * 60 * 1000) {
-            let type; do { type = types[Math.random() * types.length | 0]; } while (type === last && types.length > 1);
+            const type = pick();
             last = type; const d = Math.round(dur[type]());
             ev.push({ type, st: t / STEP_MS, lead: 120, end: (t + d) / STEP_MS, dir: Math.random() < 0.5 ? -1 : 1 });
             t += d + (16000 + Math.random() * 10000) * mul;   // olaylar çakışmaz: aralarında 16-26 sn (sıklık ayarıyla çarpılır)
@@ -12542,7 +12609,7 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
         const css = (parseFloat(canvas.style.width) || window.innerWidth) / designWidth * (MP.on && MP.z > 1 ? MP.z : 1);   // 1 tasarım birimi = kaç ekran pikseli (zoom dahil)
         const lh = Math.max(30, Math.min(120, 18 / css));   // geniş haritada küçülen etiketler ekranda okunur kalır
         const pl = (MP.room && MP.room.players) || [];
-        const sz = bird.size;
+        const sz = hasPU('tinyBird') ? 60 : bird.size;   // diğer kuşlar benim Minik Kuş'umdan küçülmesin
         ctx.textAlign = 'center';
         if (!MP.go) {   // geri sayım: herkes sunucudaki sıraya göre aynı hizada dizilir, diğerlerini kendi konumlarında görür
             const meId0 = MP.sock && MP.sock.id;
@@ -12550,7 +12617,7 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
                 if (!q.alive || q.id === meId0 || MP.slots[q.id] === undefined) continue;
                 const sl = MP.slots[q.id], img0 = images[q.bird] || images[1], x0 = _mpLaneX(sl), y0 = _mpLaneY(sl);
                 ctx.globalAlpha = 0.85;
-                if (img0 && img0.complete && img0.naturalWidth) ctx.drawImage(_mpSprite(img0), x0 - sz / 2, y0 - sz / 2, sz, sz);
+                if (img0 && img0.complete && img0.naturalWidth) ctx.drawImage(_mpSprite(img0), x0 - sz * 0.65, y0 - sz * 0.65, sz * 1.3, sz * 1.3);
                 ctx.globalAlpha = 1;
                 _mpPutLabel(_mpLabel(q.name, '#fff'), x0, y0, sl, lh, sz);
             }
@@ -12562,7 +12629,7 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
             if (o.dying) {   // ölen kuş: gecikmeli oynatma son örneğe ulaşınca yerçekimiyle düşer, borularla birlikte sola kayar, sönerek kaybolur
                 if (now - o.t > 6000) { delete MP.others[id]; continue; }
             } else if (!p || !p.alive || now - o.t > 3000) continue;
-            const img = images[(p && p.bird) != null ? p.bird : 1] || images[1], b = o.buf;
+            const img0 = images[(p && p.bird) != null ? p.bird : 1] || images[1], b = o.buf;
             // Kare süresi (oyun adımı cinsinden): tampon ve yumuşatma kare hızından bağımsız çalışır
             let fdt = o.tf ? (now - o.tf) / STEP_MS : 1; o.tf = now; if (!(fdt > 0) || fdt > 6) fdt = 1;
             // Gecikme tamponu: hedef ağ gecikmesine göre belirlenir ama YAVAŞ ve sınırlı hızda değişir (hızlı değişim kuşun hızını bozup takılma yaratıyordu)
@@ -12605,6 +12672,13 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
             o.ry = y; o.err *= Math.exp(-fdt / 3); if (Math.abs(o.err) < 0.05) o.err = 0;
             y += o.err;
             y = Math.max(ceilY, Math.min(gndY, y));
+            // Bu oyuncunun aktif eklentileri (süresi dolanlar temizlenir)
+            const fxm = MP.fxs && MP.fxs[id], fxT = [];
+            if (fxm) for (const ty in fxm) { if (fxm[ty].end > now && POWERUPS[ty]) fxT.push(ty); else delete fxm[ty]; }
+            const fTiny = fxT.indexOf('tinyBird') >= 0, fGhost = fxT.indexOf('ghost') >= 0, fRb = fxT.indexOf('rainbow') >= 0, kS = fTiny ? 0.5 : 1;
+            if (fGhost) alpha *= (Math.floor(now / 180) % 2 === 0 ? 0.55 : 0.3);
+            let img = img0;
+            if (fRb) { const bk = Math.floor(now / 600), ids = []; for (const k in images) { const im = images[k]; if (im && im.complete && im.naturalWidth > 0) ids.push(k); } if (ids.length) img = images[ids[(bk * 7 + (id.charCodeAt(0) | 0)) % ids.length]] || img0; }
             ctx.globalAlpha = alpha;
             if (img && img.complete && img.naturalWidth) {
                 // Kendi kuşunla birebir aynı animasyon: hıza bağlı eğim + zıplama anında uzama / düşüşte yatay genişleme
@@ -12616,22 +12690,35 @@ function _mpSprite(img) {   // büyük kuş görsellerini her karede küçültme
                 else if (vv > 6) { const te = Math.min(1, (vv - 6) / 10); sx = 1 + 0.18 * te; sy = 1 - 0.14 * te; }
                 else if (vv < -8) { const te = Math.min(1, (-vv - 8) / 8); sx = 1 - 0.12 * te; sy = 1 + 0.18 * te; }
                 ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sx, sy);
-                ctx.drawImage(_mpSprite(img), -sz / 2, -sz / 2, sz, sz);
+                ctx.drawImage(_mpSprite(img), -sz * 0.65 * kS, -sz * 0.65 * kS, sz * 1.3 * kS, sz * 1.3 * kS);
                 ctx.restore();
             }
             ctx.globalAlpha = 1;
             o.px = x;   // izleyici kamerası bu oyuncunun yatay konumunu takip eder
             if (o.dying) continue;
-            _mpPutLabel(_mpLabel(p.name, '#fff'), x, y, MP.slots[id], lh, sz);
-            if (MP.spec && MP.spec.id === id) { ctx.save(); ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 6; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 160); ctx.beginPath(); ctx.arc(x, y, sz * 0.85, 0, 6.2832); ctx.stroke(); ctx.restore(); }
-            const fx = MP.fx[id]; if (fx && fx.until > now) { ctx.font = '26px sans-serif'; ctx.fillText(fx.icon, x, y - sz / 2 - lh - 10); }
+            _mpPutLabel(_mpLabel(p.name, '#fff'), x, y, MP.slots[id], lh, sz * kS);
+            if (false && MP.spec && MP.spec.id === id) { ctx.save(); ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 6; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 160); ctx.beginPath(); ctx.arc(x, y, sz * 0.85, 0, 6.2832); ctx.stroke(); ctx.restore(); }
+            // Eklenti halkaları: her aktif eklenti için iç içe, süresi azaldıkça kapanan renkli halka
+            fxT.sort((a, b) => fxm[a].start - fxm[b].start).forEach((ty, ix) => {
+                const dd = POWERUPS[ty], f = fxm[ty], left = f.end - now, frac = Math.max(0, Math.min(1, left / dd.duration)), TAU = Math.PI * 2;
+                const R = sz * kS / 2 + 9 + ix * 10 + (ty === 'extraLife' ? 1.5 * Math.pow(Math.max(0, Math.sin(now * 0.009)), 6) : 0);
+                const col = ty === 'rainbow' ? 'hsl(' + ((now * 0.35) % 360) + ',100%,62%)' : dd.color, age = now - f.start, pop = age < 260 ? 0.55 + 0.45 * (1 - Math.pow(1 - age / 260, 3)) : 1;
+                ctx.save(); ctx.translate(x, y); ctx.scale(pop, pop); ctx.globalAlpha = left < 1200 ? 0.55 + 0.45 * Math.sin(now * 0.03) : 1;
+                const g = ctx.createRadialGradient(0, 0, R * 0.45, 0, 0, R + 4); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, dd.bgColor);
+                ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R + 4, 0, TAU); ctx.fill();
+                ctx.lineCap = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
+                if (frac > 0.003) { ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.beginPath(); ctx.arc(0, 0, R, -Math.PI / 2, -Math.PI / 2 + TAU * frac); ctx.stroke(); }
+                ctx.restore();
+            });
+            if (fxT.length) { ctx.font = '22px sans-serif'; ctx.globalAlpha = 1; const _ly = y - sz * kS / 2 - lh - 14 - fxT.length * 3; fxT.forEach((ty, ix) => ctx.fillText(POWERUPS[ty].icon, x + (ix - (fxT.length - 1) / 2) * 26, _ly)); }
+            else { const fx = MP.fx[id]; if (fx && fx.until > now) { ctx.font = '26px sans-serif'; ctx.fillText(fx.icon, x, y - sz / 2 - lh - 10); } }
         }
         // Kendi kuşunu kalabalıkta kolay bulmak için "SEN" etiketi
         if (gameState !== 'gameOver') {
             const meId = MP.sock && MP.sock.id, mp = pl.find(q => q.id === meId);
             const nmS = (mp && mp.name) || playerName || (playerNameInput.value || '').trim() || 'Sen';
             const col = isRainbow ? 'hsl(' + (Math.floor(now / 90) % 12 * 30) + ',100%,62%)' : (nameColor && nameColor !== 'white' ? nameColor : '#ffe27a');
-            _mpPutLabel(_mpLabel(nmS, col), bird.x, bird.y, (MP.slots[meId] | 0), lh, sz);
+            _mpPutLabel(_mpLabel(nmS, col), bird.x, bird.y, (MP.slots[meId] | 0), lh, bird.size);
         }
         ctx.restore();
     };
@@ -13603,6 +13690,35 @@ html body #mpBox #mpIn:not(#_rf):is(:has(#mpName),:has(.mpRnBox)) .mpSw.on .mpSw
 #settingsMenu .st-note{display:inline;margin-left:7px;font:600 10.5px Roboto,sans-serif;font-style:normal;letter-spacing:.2px;text-transform:none;color:rgba(255,255,255,.62)}
 #settingsMenu .st-sub{margin:8px 0 0 44px;font-size:11px;color:rgba(255,255,255,.6)}
 @media (max-width:480px){#settingsMenu .st-note{display:block;margin:2px 0 0}}
+
+/* oda içi: oda kodu kutusu küçültüldü, herkese açık anahtarının alt yazısı kaldırıldı */
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpCodeBox{padding:7px 10px 8px!important;gap:6px!important;border-radius:14px!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpCodeBox .mpCl{font-size:9px!important;letter-spacing:2px!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpCode{font-size:22px!important;letter-spacing:6px!important;padding-left:6px!important;text-shadow:none!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpCode:not(.show)::after{font-size:20px!important;letter-spacing:5px!important;padding-left:6px!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpCodeBox .mpIco{width:32px!important;height:32px!important;min-height:32px!important;border-radius:10px!important;font-size:14px!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) #mpVis .mpSwTx small{display:none!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) #mpVis{min-height:0!important;padding-top:9px!important;padding-bottom:9px!important}
+
+/* HAZIRIM butonu: hazır değilken soluk kesikli çerçeve + boş daire, hazırken parlak yeşil + ✔ ve nabız halkası */
+@keyframes mpRdyRing{0%{transform:scale(1);opacity:.85}100%{transform:scale(1.07,1.4);opacity:0}}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:14px!important;padding:10px 20px!important;min-height:64px!important;border-radius:20px!important;text-align:left!important;overflow:visible!important;color:#e9ecff!important;background:linear-gradient(180deg,#34386b,#22254d)!important;border:2px dashed rgba(255,255,255,.4)!important;box-shadow:0 4px 0 #14163a,0 10px 18px rgba(0,0,0,.28)!important;transform:none!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn::before{content:''!important;flex:none;display:block!important;width:30px;height:30px;box-sizing:border-box;border-radius:50%;border:3px solid rgba(255,255,255,.7)!important;background:transparent!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn::after{display:none!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn .rdTx{display:flex;flex-direction:column;gap:3px;min-width:0}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn .rdTx b{font:900 16px Roboto,sans-serif;letter-spacing:1.6px}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn .rdTx small{font:700 10.5px Roboto,sans-serif;letter-spacing:.4px;opacity:.7}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn:hover{transform:translateY(-1px)!important;filter:brightness(1.1)!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn:active{transform:translateY(3px)!important;box-shadow:0 1px 0 #14163a!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn.on{color:#05250f!important;background:linear-gradient(180deg,#52f595,#1fbf63)!important;border:2px solid #dcffe9!important;box-shadow:0 4px 0 #0f7a3b,0 0 0 4px rgba(46,229,106,.3),0 10px 24px rgba(46,229,106,.42)!important}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn.on::before{content:'✔'!important;display:grid!important;place-items:center;width:30px;height:30px;border:0!important;background:#05250f!important;color:#5dffa0;font:900 17px/1 Roboto,sans-serif}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn.on::after{display:block!important;content:'';position:absolute;inset:0;height:auto;border-radius:inherit;border:2px solid rgba(120,255,170,.9);background:none!important;pointer-events:none;animation:mpRdyRing 1.7s ease-out infinite}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyBtn.on .rdTx small{opacity:.8}
+html body #mpBox #mpIn:not(#_rf):not(#_x2) .mpRdyPill.y{box-shadow:0 0 12px rgba(53,224,122,.55)!important}
+
+/* isim + renk kutusu: oda ızgarası dışında (lobi, kart dışı) asla görünmez */
+#mpIdBox{display:none!important}
+#mpIn .mpRoomG #mpIdBox{display:block!important}
 </style>
 
 

@@ -25,15 +25,30 @@ io.use((s, next) => { const ip = ipOf(s); if ((connsByIp.get(ip) || 0) >= MAX_CO
 const EV_PAUSE = { low: 2.2, normal: 1, high: 0.4 };   // olaylar arası bekleme çarpanı (az / normal / sık)
 const EV_HORIZON = 3 * 60 * 60 * 1000;   // olay takvimi 3 saat boyunca üretilir (çok uzun turlarda da olaylar sürsün)
 const EV_TYPES = ['wind', 'rwind', 'storm', 'moon', 'heavy', 'grav', 'glide'];   // glide: SÜZÜLME
+// Olay seçici: torba (shuffle-bag) + ailelerin art arda gelmemesi. Her tür sırayla bir kez çıkar, aynı tür ya da benzer olay (rüzgâr/yerçekimi ailesi) art arda gelmez
+const EV_FAM = { wind: 'w', rwind: 'w', storm: 's', moon: 'g', heavy: 'g', grav: 'g', glide: 'g' };
+function makeEvPicker(types) {
+  let bag = []; const hist = [], n = types.length;
+  return () => {
+    if (!bag.length) { bag = types.slice(); for (let i = bag.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; const x = bag[i]; bag[i] = bag[j]; bag[j] = x; } }
+    const last = hist[hist.length - 1], rec = hist.slice(-Math.min(2, n - 1));
+    const okF = t => !rec.includes(t) && (n < 3 || EV_FAM[t] !== EV_FAM[last]);
+    let t = bag.find(okF);
+    if (t === undefined) { const alt = types.filter(okF); if (alt.length) t = alt[Math.random() * alt.length | 0]; }   // torbada uygun kalmadıysa tüm türlerden seç
+    if (t === undefined) t = bag.find(x => !rec.includes(x));
+    if (t === undefined) t = bag.find(x => x !== last);
+    if (t === undefined) t = bag[0];
+    const bi = bag.indexOf(t); if (bi >= 0) bag.splice(bi, 1); hist.push(t); if (hist.length > 4) hist.shift(); return t;
+  };
+}
 function makeEvents(freq, off) {
   const mul = EV_PAUSE[freq] || 1;
   const ev = [], types = EV_TYPES.filter(t => !(Array.isArray(off) && off.includes(t)));   // oda sahibinin kapattığı olaylar çıkmaz
   if (!types.length) return ev;
   const dur = { wind: () => 9000 + Math.random() * 3000, rwind: () => 12000 + Math.random() * 3000, storm: () => 10000 + Math.random() * 3000, moon: () => 10000 + Math.random() * 2000, heavy: () => 8000 + Math.random() * 2000, grav: () => 14000, glide: () => 10000 + Math.random() * 3000 };
-  let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '';
+  let t = (20000 + Math.random() * 8000) * Math.min(1.5, mul), last = '', pick = makeEvPicker(types);
   while (t < EV_HORIZON) {
-    let type; do { type = types[Math.random() * types.length | 0]; } while (type === last && types.length > 1);
-    last = type;
+    const type = pick(); last = type;
     const d = Math.round(dur[type]());
     ev.push({ type, t: Math.round(t), d, dir: Math.random() < 0.5 ? -1 : 1 });
     t += d + (4000 + 12000 + Math.random() * 10000) * mul;   // olaylar çakışmaz (bekleme süresi sıklık ayarına göre değişir)
